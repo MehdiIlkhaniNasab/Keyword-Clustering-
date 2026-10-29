@@ -210,6 +210,18 @@ function qtb_gsheet_prepare( $project, $kinds = array( 'research', 'calendar' ) 
 		foreach ( $cells as $row ) {
 			$maxc = max( $maxc, $row ? max( array_keys( $row ) ) : 1 );
 		}
+		// The grid must also hold every column / row that gets a width, height, merge or dropdown.
+		if ( ! empty( $sh['cols'] ) ) {
+			$maxc = max( $maxc, max( array_keys( $sh['cols'] ) ) );
+		}
+		if ( ! empty( $sh['heights'] ) ) {
+			$maxr = max( $maxr, max( array_keys( $sh['heights'] ) ) );
+		}
+		foreach ( array_merge( (array) ( $sh['merges'] ?? array() ), array_column( (array) ( $sh['lists'] ?? array() ), 'range' ) ) as $a1 ) {
+			$g    = qtb_grange( 0, $a1 );
+			$maxc = max( $maxc, $g['endColumnIndex'] );
+			$maxr = max( $maxr, $g['endRowIndex'] );
+		}
 		$frow = 0;
 		$fcol = 0;
 		if ( ! empty( $sh['freeze'] ) && preg_match( '/^([A-Z]+)(\d+)$/', $sh['freeze'], $fm ) ) {

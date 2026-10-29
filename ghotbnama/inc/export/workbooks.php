@@ -554,6 +554,10 @@ function qtb_book_calendar( $project ) {
 		$sh['cells'][ $r ][32] = qtb_c( implode( ' | ', (array) $a['outline'] ), array_merge( $bodyS, array( 'size' => 9 ) ) );
 		$sh['heights'][ $r ]   = 34;
 	}
+	if ( ! $arts ) {
+		$sh['cells'][1][1] = qtb_c( 'مقاله‌ای برای تقویم پیدا نشد: همه کلاسترهای آموزشی صفحه دارند یا کلاستر بلاگ نیست. ایده‌ها در تب Ideas است.', array( 'b' => true, 'color' => '20124D' ) );
+		$sh['merges'][]    = 'A1:J1';
+	}
 	if ( $first ) {
 		$sh['lists'][] = array( 'range' => 'AA' . $first . ':AA' . max( $first, $r ), 'values' => $stat );
 		$sh['freeze']  = 'C1';

@@ -219,6 +219,16 @@ function qtb_gsheet_prepare( $project, $kinds = array( 'research', 'calendar' ) 
 			}
 			--$fcol;
 		}
+		// Google refuses a merge that crosses the frozen edge: unfreeze that direction.
+		foreach ( (array) ( $sh['merges'] ?? array() ) as $m ) {
+			$g = qtb_grange( 0, $m );
+			if ( $fcol && $g['startColumnIndex'] < $fcol && $g['endColumnIndex'] > $fcol ) {
+				$fcol = 0;
+			}
+			if ( $frow && $g['startRowIndex'] < $frow && $g['endRowIndex'] > $frow ) {
+				$frow = 0;
+			}
+		}
 		$props = array(
 			'sheetId'        => $sid,
 			'title'          => '~qtb~' . $sid,
@@ -255,7 +265,7 @@ function qtb_gsheet_prepare( $project, $kinds = array( 'research', 'calendar' ) 
 	if ( $chunk ) {
 		$batches[] = $chunk;
 	}
-	$job = array( 'sheet_id' => $sheet_id, 'batches' => $batches, 'pos' => 0, 'tabs' => $titles, 'started' => qtb_now() );
+	$job = array( 'sheet_id' => $sheet_id, 'batches' => $batches, 'pos' => 0, 'tabs' => $titles, 'started' => qtb_now(), 'errors' => array() );
 	qtb_data_put( $project['id'], 'gsheet_job', $job );
 	return $job;
 }
@@ -272,9 +282,20 @@ function qtb_gsheet_tick( $project, $deadline ) {
 	}
 	$n = count( $job['batches'] );
 	while ( $job['pos'] < $n ) {
-		$res = qtb_sheet_batch( $job['sheet_id'], $job['batches'][ $job['pos'] ] );
+		$batch = $job['batches'][ $job['pos'] ];
+		$res   = qtb_sheet_batch( $job['sheet_id'], $batch );
 		if ( is_wp_error( $res ) ) {
-			return $res;
+			// Tabs could not be created / renamed: nothing else can be written.
+			if ( $job['pos'] < 2 || 'qtb_google_http' !== $res->get_error_code() ) {
+				return $res;
+			}
+			// One bad formatting request must not leave the tabs empty: write the
+			// values and widths of this batch without merges / validations / filters.
+			$plain = array_values( array_filter( $batch, function ( $rq ) {
+				return isset( $rq['updateCells'] ) || isset( $rq['updateDimensionProperties'] );
+			} ) );
+			$retry = $plain ? qtb_sheet_batch( $job['sheet_id'], $plain ) : $res;
+			$job['errors'][] = mb_substr( $res->get_error_message(), 0, 200 ) . ( is_wp_error( $retry ) ? '' : ' (محتوا بدون بخشی از قالب‌بندی نوشته شد)' );
 		}
 		$job['pos']++;
 		if ( 2 === $job['pos'] ) {
@@ -292,6 +313,7 @@ function qtb_gsheet_tick( $project, $deadline ) {
 		qtb_data_delete( $project['id'], array( 'gsheet_job' ) );
 	}
 	return array(
+		'errors' => (array) ( $job['errors'] ?? array() ),
 		'done' => $done,
 		'pct'  => (int) round( 100 * $job['pos'] / max( 1, $n ) ),
 		'tabs' => count( $job['tabs'] ),

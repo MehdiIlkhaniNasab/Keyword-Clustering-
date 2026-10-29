@@ -196,11 +196,52 @@ function qtb_pillar_prices( $clusters, $pillars, $inventory ) {
 }
 
 /**
- * Score clusters (value, ease, opportunity, priority).
+ * Real sales of each pillar from the store: revenue and units of the last 90
+ * days (orders), or lifetime units × price when orders are not available.
+ *
+ * @return array pillar id → {rev, qty, lifetime}
  */
-function qtb_score_clusters( $project, $clusters, $pillars, $inventory ) {
+function qtb_pillar_sales( $pillars, $inventory, $sales ) {
+	$out  = array();
+	$prod = (array) ( $sales['products'] ?? array() );
+	foreach ( $pillars as $p ) {
+		$name = qtb_norm_key( $p['name'] );
+		$row  = array( 'rev' => 0, 'qty' => 0, 'lifetime' => 0 );
+		foreach ( (array) $inventory as $it ) {
+			if ( 'product' !== $it['type'] || '' === $name ) {
+				continue;
+			}
+			$hay = qtb_norm_key( $it['title'] . ' ' . implode( ' ', (array) ( $it['cats'] ?? array() ) ) );
+			if ( false === mb_strpos( $hay, $name ) ) {
+				continue;
+			}
+			$pid = (int) ( $it['pid'] ?? 0 );
+			if ( $pid && isset( $prod[ $pid ] ) ) {
+				$row['qty'] += $prod[ $pid ][0];
+				$row['rev'] += $prod[ $pid ][1];
+			}
+			$row['lifetime'] += (int) ( $it['sold'] ?? 0 ) * (float) ( $it['price'] ?? 0 );
+		}
+		$out[ $p['id'] ] = $row;
+	}
+	return $out;
+}
+
+/**
+ * Score clusters (value, ease, opportunity, priority).
+ *
+ * @param array $sales Store sales summary (see qtb_sales_add), optional.
+ */
+function qtb_score_clusters( $project, $clusters, $pillars, $inventory, $sales = array() ) {
 	$cr     = max( 0.05, (float) $project['cfg']['cr'] ) / 100;
 	$prices = qtb_pillar_prices( $clusters, $pillars, $inventory );
+	$psales = qtb_pillar_sales( $pillars, $inventory, $sales );
+	// Proven demand: a pillar that already sells is a safer investment.
+	$smax   = 0;
+	foreach ( $psales as $ps ) {
+		$smax = max( $smax, $ps['rev'] ?: $ps['lifetime'] );
+	}
+	$real_aov = ( (int) ( $sales['orders'] ?? 0 ) >= 5 ) ? (float) $sales['revenue'] / (int) $sales['orders'] : 0;
 	$all    = array_filter( array_map( function ( $it ) {
 		return 'product' === $it['type'] ? (float) ( $it['price'] ?? 0 ) : 0;
 	}, (array) $inventory ) );
@@ -209,7 +250,7 @@ function qtb_score_clusters( $project, $clusters, $pillars, $inventory ) {
 	// Commercial value of each pillar (for the blog support share).
 	$pillar_val = array();
 	foreach ( $clusters as &$c ) {
-		$aov       = $aov_cfg > 0 ? $aov_cfg : ( ( $prices[ $c['pillar'] ] ?? 0 ) ?: $store_aov );
+		$aov       = $aov_cfg > 0 ? $aov_cfg : ( $real_aov ?: ( ( $prices[ $c['pillar'] ] ?? 0 ) ?: $store_aov ) );
 		$traffic   = $c['vol'] * qtb_target_ctr( $c['page'] );
 		$w         = qtb_intent_weight( $c['intent'] );
 		$orders    = $traffic * $cr * $w;
@@ -222,6 +263,10 @@ function qtb_score_clusters( $project, $clusters, $pillars, $inventory ) {
 			'aov'     => round( $aov ),
 			'units'   => $traffic * $w, // Value without prices (for ranking).
 		);
+		if ( $smax > 0 && 'blog' !== $c['page'] ) {
+			$ps                   = $psales[ $c['pillar'] ] ?? array( 'rev' => 0, 'lifetime' => 0 );
+			$c['value']['units'] *= 1 + 0.6 * ( ( $ps['rev'] ?: $ps['lifetime'] ) / $smax );
+		}
 		if ( 'blog' !== $c['page'] ) {
 			$pillar_val[ $c['pillar'] ] = ( $pillar_val[ $c['pillar'] ] ?? 0 ) + $c['value']['units'];
 		}
@@ -284,7 +329,8 @@ function qtb_difficulty_free( $c ) {
 /**
  * Pillar totals for the dashboard.
  */
-function qtb_pillar_totals( $clusters, $pillars ) {
+function qtb_pillar_totals( $clusters, $pillars, $inventory = array(), $sales = array() ) {
+	$psales = qtb_pillar_sales( $pillars, $inventory, $sales );
 	$by = array();
 	foreach ( $clusters as $c ) {
 		$by[ $c['id'] ] = $c;
@@ -297,6 +343,8 @@ function qtb_pillar_totals( $clusters, $pillars ) {
 		$p['landings'] = 0;
 		$p['blogs']    = 0;
 		$p['score']    = 0;
+		$p['sales_rev'] = (int) round( $psales[ $p['id'] ]['rev'] ?? 0 );
+		$p['sales_qty'] = (int) ( $psales[ $p['id'] ]['qty'] ?? 0 );
 		foreach ( $p['clusters'] as $cid ) {
 			$c = $by[ $cid ] ?? null;
 			if ( ! $c ) {

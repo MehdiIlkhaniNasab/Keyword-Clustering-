@@ -6,6 +6,9 @@
  *
  * Sources (store_mode «auto» tries them in this order and skips silently when
  * one is not available):
+ *   connector — the SeoReport Connector plugin on the client site (v1.2.0+): products
+ *               with price, categories, lifetime sales, posts, pages, plus the orders
+ *               of the last 90 days (real AOV and sales per product).
  *   local    — this WordPress site (WooCommerce tables), when the project's domain is this site.
  *   woo_rest — WooCommerce REST API v3 with consumer key / secret (private stores).
  *   wp_rest  — public WooCommerce Store API + WordPress REST API (no keys needed).
@@ -40,6 +43,9 @@ function qtb_store_sources( $project ) {
 		return array( $mode );
 	}
 	$out = array();
+	if ( '' !== (string) $project['cfg']['connector_key'] && ! qtb_store_is_local( $project ) ) {
+		$out[] = 'connector';
+	}
 	if ( qtb_store_is_local( $project ) ) {
 		$out[] = 'local';
 	}
@@ -61,7 +67,7 @@ function qtb_store_sources( $project ) {
  */
 function qtb_store_step( $project, $state ) {
 	if ( empty( $state['sources'] ) && ! isset( $state['si'] ) ) {
-		$state = array( 'sources' => qtb_store_sources( $project ), 'si' => 0, 'phase' => 0, 'page' => 1, 'items' => array(), 'notes' => array(), 'source' => '', 'done' => false );
+		$state = array( 'sources' => qtb_store_sources( $project ), 'si' => 0, 'phase' => 0, 'page' => 1, 'items' => array(), 'notes' => array(), 'source' => '', 'done' => false, 'sales' => array() );
 	}
 	if ( $state['si'] >= count( $state['sources'] ) ) {
 		$state['done'] = true;
@@ -71,6 +77,9 @@ function qtb_store_step( $project, $state ) {
 	$t0  = microtime( true );
 	while ( ! $state['done'] && microtime( true ) - $t0 < 12 ) {
 		switch ( $src ) {
+			case 'connector':
+				$r = qtb_store_connector_page( $project, $state );
+				break;
 			case 'local':
 				$r = qtb_store_local();
 				break;
@@ -94,6 +103,9 @@ function qtb_store_step( $project, $state ) {
 			return $state;
 		}
 		$state['items'] = array_merge( $state['items'], $r['items'] );
+		if ( isset( $r['sales'] ) ) {
+			$state['sales'] = $r['sales'];
+		}
 		if ( ! empty( $r['finished'] ) ) {
 			if ( $state['items'] ) {
 				$state['source'] = $src;
@@ -120,7 +132,7 @@ function qtb_store_step( $project, $state ) {
  * Label of a source.
  */
 function qtb_store_source_label( $src ) {
-	$l = array( 'local' => 'همین سایت (ووکامرس)', 'woo_rest' => 'API ووکامرس', 'wp_rest' => 'API عمومی وردپرس/ووکامرس', 'sitemap' => 'سایت‌مپ', 'none' => 'بدون اتصال' );
+	$l = array( 'connector' => 'افزونه رابط (SeoReport Connector)', 'local' => 'همین سایت (ووکامرس)', 'woo_rest' => 'API ووکامرس', 'wp_rest' => 'API عمومی وردپرس/ووکامرس', 'sitemap' => 'سایت‌مپ', 'none' => 'بدون اتصال' );
 	return $l[ $src ] ?? $src;
 }
 
@@ -134,6 +146,8 @@ function qtb_store_local() {
 		foreach ( $ids as $id ) {
 			$cats    = wp_get_post_terms( $id, 'product_cat', array( 'fields' => 'names' ) );
 			$items[] = array(
+				'pid'   => (int) $id,
+				'sold'  => (int) get_post_meta( $id, 'total_sales', true ),
 				'type'  => 'product',
 				'url'   => get_permalink( $id ),
 				'title' => html_entity_decode( get_the_title( $id ), ENT_QUOTES, 'UTF-8' ),
@@ -157,7 +171,130 @@ function qtb_store_local() {
 			$items[] = array( 'type' => $pt, 'url' => get_permalink( $id ), 'title' => html_entity_decode( get_the_title( $id ), ENT_QUOTES, 'UTF-8' ) );
 		}
 	}
-	return array( 'items' => $items, 'finished' => true );
+	$sales = array();
+	if ( function_exists( 'wc_get_orders' ) ) {
+		$orders = wc_get_orders( array( 'type' => 'shop_order', 'status' => array( 'wc-completed', 'wc-processing' ), 'date_created' => '>' . ( time() - 90 * DAY_IN_SECONDS ), 'limit' => 3000 ) );
+		foreach ( $orders as $o ) {
+			$items_o = array();
+			foreach ( $o->get_items() as $it ) {
+				$items_o[] = array( 'id' => (int) $it->get_product_id(), 'qty' => (int) $it->get_quantity(), 'total' => (float) $it->get_total() );
+			}
+			$sales = qtb_sales_add( $sales, array( 'total' => (float) $o->get_total(), 'currency' => $o->get_currency(), 'items' => $items_o, 'source' => (string) $o->get_meta( '_wc_order_attribution_source_type' ) ) );
+		}
+	}
+	return array( 'items' => $items, 'finished' => true, 'sales' => $sales );
+}
+
+/**
+ * Add one order to the sales summary (amounts in Toman).
+ *
+ * @param array $s     Summary {orders, revenue, organic_orders, organic_revenue, products: id → [qty, revenue]}.
+ * @param array $order {total, currency, items: [{id, qty, total}], source}
+ */
+function qtb_sales_add( $s, $order ) {
+	$s   = wp_parse_args( $s, array( 'orders' => 0, 'revenue' => 0, 'organic_orders' => 0, 'organic_revenue' => 0, 'products' => array(), 'days' => 90 ) );
+	$cur = (string) ( $order['currency'] ?? 'IRT' );
+	$tot = qtb_to_toman( (float) $order['total'], $cur );
+	++$s['orders'];
+	$s['revenue'] += $tot;
+	if ( 'organic' === ( $order['source'] ?? '' ) ) {
+		++$s['organic_orders'];
+		$s['organic_revenue'] += $tot;
+	}
+	foreach ( (array) ( $order['items'] ?? array() ) as $it ) {
+		$id = (int) ( $it['id'] ?? 0 );
+		if ( ! $id ) {
+			continue;
+		}
+		$row                    = $s['products'][ $id ] ?? array( 0, 0 );
+		$s['products'][ $id ] = array( $row[0] + (int) $it['qty'], $row[1] + qtb_to_toman( (float) $it['total'], $cur ) );
+	}
+	return $s;
+}
+
+/**
+ * Site root of a project (for REST calls).
+ */
+function qtb_project_root( $project ) {
+	return preg_match( '#^https?://#', (string) $project['site_url'] ) ? untrailingslashit( (string) $project['site_url'] ) : 'https://' . qtb_project_domain( $project );
+}
+
+/**
+ * GET a SeoReport Connector route.
+ *
+ * @return array|WP_Error decoded JSON
+ */
+function qtb_connector_get( $project, $route, $args = array() ) {
+	$key = (string) $project['cfg']['connector_key'];
+	$url = add_query_arg( array_merge( $args, array( 'key' => rawurlencode( $key ) ) ), qtb_project_root( $project ) . '/wp-json/seoreport-connector/v1/' . $route );
+	$res = qtb_http( $url, array( 'timeout' => 45, 'headers' => array( 'X-SR-Key' => $key, 'Accept' => 'application/json' ) ) );
+	if ( is_wp_error( $res ) ) {
+		return new WP_Error( 'qtb_conn_net', qtb_net_error( $res ) );
+	}
+	$code = (int) wp_remote_retrieve_response_code( $res );
+	$data = json_decode( (string) wp_remote_retrieve_body( $res ), true );
+	if ( 403 === $code ) {
+		return new WP_Error( 'qtb_conn_key', 'کلید افزونه رابط پذیرفته نشد؛ کلید را از «تنظیمات › SeoReport Connector» سایت کپی کنید.' );
+	}
+	if ( 404 === $code ) {
+		return new WP_Error( 'qtb_conn_404', 'inventory' === $route ? 'افزونه رابط روی سایت نصب نیست یا نسخه آن قدیمی است (نسخه ۱٫۲٫۰ به بعد لازم است).' : (string) ( $data['message'] ?? 'HTTP 404' ), array( 'code' => (string) ( $data['code'] ?? '' ) ) );
+	}
+	if ( 200 !== $code || ! is_array( $data ) ) {
+		return new WP_Error( 'qtb_conn_http', 'افزونه رابط پاسخ نداد (HTTP ' . $code . ').' );
+	}
+	return $data;
+}
+
+/**
+ * One page of the connector. Phases: 0 products, 1 categories, 2 posts, 3 pages, 4 orders (90 days).
+ */
+function qtb_store_connector_page( $project, $state ) {
+	$phase = (int) $state['phase'];
+	$page  = (int) $state['page'];
+	$types = array( 'product', 'product_cat', 'post', 'page' );
+	if ( $phase < 4 ) {
+		$per  = 200;
+		$data = qtb_connector_get( $project, 'inventory', array( 'type' => $types[ $phase ], 'page' => $page, 'per_page' => $per ) );
+		if ( is_wp_error( $data ) ) {
+			if ( 0 === $phase && 1 === $page ) {
+				return $data;
+			}
+			return array( 'items' => array(), 'phase' => $phase + 1, 'page' => 1 );
+		}
+		$cur   = (string) ( $data['currency'] ?? 'IRT' ) ?: 'IRT';
+		$items = array();
+		foreach ( (array) ( $data['items'] ?? array() ) as $d ) {
+			if ( empty( $d['url'] ) ) {
+				continue;
+			}
+			$row = array( 'type' => 'product_cat' === $types[ $phase ] ? 'category' : $types[ $phase ], 'url' => (string) $d['url'], 'title' => (string) $d['title'] );
+			if ( 0 === $phase ) {
+				$row['pid']   = (int) $d['id'];
+				$row['price'] = qtb_to_toman( (float) ( $d['price'] ?? 0 ), $cur );
+				$row['sold']  = (int) ( $d['sales'] ?? 0 );
+				$row['cats']  = (array) ( $d['cats'] ?? array() );
+				$row['stock'] = (string) ( $d['stock'] ?? '' );
+			} elseif ( 1 === $phase ) {
+				$row['count'] = (int) ( $d['count'] ?? 0 );
+			}
+			$items[] = $row;
+		}
+		$more = $page * $per < (int) ( $data['total'] ?? 0 ) && $page * $per < QTB_STORE_MAX;
+		return $more ? array( 'items' => $items, 'phase' => $phase, 'page' => $page + 1 ) : array( 'items' => $items, 'phase' => $phase + 1, 'page' => 1 );
+	}
+	// Orders of the last 90 days (page = offset / 100 + 1).
+	$per    = 100;
+	$offset = ( $page - 1 ) * $per;
+	$data   = qtb_connector_get( $project, 'orders', array( 'after' => gmdate( 'Y-m-d', time() - 90 * DAY_IN_SECONDS ), 'before' => gmdate( 'Y-m-d' ), 'per_page' => $per, 'offset' => $offset ) );
+	if ( is_wp_error( $data ) ) {
+		return array( 'items' => array(), 'finished' => true ); // No WooCommerce / orders: inventory is still complete.
+	}
+	$sales = (array) ( $state['sales'] ?? array() );
+	foreach ( (array) ( $data['orders'] ?? array() ) as $o ) {
+		$sales = qtb_sales_add( $sales, $o );
+	}
+	$done = $offset + $per >= (int) ( $data['total'] ?? 0 ) || $offset + $per >= 3000 || empty( $data['orders'] );
+	return $done ? array( 'items' => array(), 'finished' => true, 'sales' => $sales ) : array( 'items' => array(), 'phase' => 4, 'page' => $page + 1, 'sales' => $sales );
 }
 
 /**

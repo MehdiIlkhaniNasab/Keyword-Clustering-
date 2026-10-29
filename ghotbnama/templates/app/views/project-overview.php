@@ -111,6 +111,12 @@ $pmax = max( 1, max( array_column( $R['pillars'], 'vol' ) ?: array( 1 ) ) );
 			?>
 			<div class="qtb-hbar"><span><?php echo qtb_chip_prio( $k ); // phpcs:ignore ?></span><span class="qtb-bar"><i class="<?php echo 'P1' === $k ? 'is-gold' : ''; ?>" style="width:<?php echo esc_attr( round( 100 * $n / max( 1, count( $R['clusters'] ) ) ) ); ?>%"></i></span><b class="num"><?php echo esc_html( qtb_num( $n ) ); ?></b></div>
 		<?php endforeach; ?>
+		<?php if ( ! empty( $meta['sales']['orders'] ) ) : ?>
+			<h3>فروش واقعی سایت (۹۰ روز اخیر)</h3>
+			<p class="qtb-small" style="margin:0"><?php echo esc_html( sprintf( '%s سفارش · %s · میانگین سبد %s · سهم ارگانیک %s', qtb_num( $meta['sales']['orders'] ), qtb_money( $meta['sales']['revenue'] ), qtb_money( $meta['sales']['revenue'] / max( 1, $meta['sales']['orders'] ) ), qtb_pct( $meta['sales']['organic_orders'] / max( 1, $meta['sales']['orders'] ) ) ) ); ?><br><span class="qtb-muted">پیلارهایی که الان فروش دارند در امتیاز وزن بیشتری گرفتند و میانگین سبد واقعی در تخمین فروش استفاده شد.</span></p>
+		<?php elseif ( ! empty( $meta['store']['source'] ) ) : ?>
+			<p class="qtb-small qtb-muted" style="margin:8px 0 0">صفحات سایت از «<?php echo esc_html( qtb_store_source_label( $meta['store']['source'] ) ); ?>» خوانده شد (<?php echo esc_html( qtb_num( $meta['store']['items'] ) ); ?> صفحه).</p>
+		<?php endif; ?>
 		<p class="qtb-muted qtb-small" style="margin:10px 0 0">
 			هزینه این اجرا: هوش مصنوعی حدود <?php echo esc_html( qtb_num( $meta['ai_cost'] ?? 0, 3 ) ); ?> دلار · نتایج گوگل: <?php echo esc_html( qtb_num( $meta['serp_new'] ?? 0 ) ); ?> درخواست جدید، <?php echo esc_html( qtb_num( $meta['serp_cache'] ?? 0 ) ); ?> از کش.
 		</p>

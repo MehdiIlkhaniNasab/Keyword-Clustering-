@@ -161,15 +161,15 @@ function qtb_book_research( $project ) {
 
 	// Dashboard.
 	$d = array( 'name' => 'داشبورد', 'rtl' => true, 'tab' => qtb_xc( 'brand' ), 'cols' => array( 1 => 2 ), 'cells' => array(), 'merges' => array(), 'heights' => array() );
-	for ( $c = 2; $c <= 10; $c++ ) {
+	for ( $c = 2; $c <= 11; $c++ ) {
 		$d['cols'][ $c ] = 17;
 	}
 	$d['cols'][2]     = 30;
 	$d['cells'][1][2] = qtb_c( 'قطب‌نما | کیورد ریسرچ ' . $project['name'], array( 'b' => true, 'size' => 16, 'color' => 'FFFFFF', 'bg' => qtb_xc( 'brand' ), 'h' => 'right' ) );
-	$d['merges'][]    = 'B1:J1';
+	$d['merges'][]    = 'B1:K1';
 	$d['heights'][1]  = 38;
 	$d['cells'][2][2] = qtb_c( sprintf( '%s · ساخته‌شده %s · %s', $project['site_url'], qtb_jdate( $meta['built'] ?? qtb_now() ), 'free' === ( $meta['serp_mode'] ?? 'free' ) ? 'خوشه‌بندی زبانی + هوش مصنوعی' : 'خوشه‌بندی بر اساس ۱۰ نتیجه اول گوگل' ), array( 'color' => qtb_xc( 'muted' ), 'size' => 9 ) );
-	$d['merges'][]    = 'B2:J2';
+	$d['merges'][]    = 'B2:K2';
 	$kpis = array(
 		'کلمات ورودی'                => (int) ( $meta['input'] ?? 0 ),
 		'کلمات معتبر'                => (int) ( $meta['keywords'] ?? count( $kws ) ),
@@ -190,13 +190,13 @@ function qtb_book_research( $project ) {
 	$d['heights'][4] = 30;
 	$d['heights'][5] = 34;
 	$r    = 7;
-	$head = array( 'پیلار', 'حجم جستجو', 'کلاستر', 'لندینگ', 'مقاله', 'اولویت P1', 'صفحه جدید', 'ترافیک بالقوه', 'فروش بالقوه (تومان)' );
+	$head = array( 'پیلار', 'حجم جستجو', 'کلاستر', 'لندینگ', 'مقاله', 'اولویت P1', 'صفحه جدید', 'ترافیک بالقوه', 'فروش بالقوه (تومان)', 'فروش واقعی ۹۰ روز (تومان)' );
 	foreach ( $head as $i => $h ) {
 		$d['cells'][ $r ][ $i + 2 ] = qtb_c( $h, qtb_xs_head() );
 	}
 	foreach ( $R['pillars'] as $p ) {
 		++$r;
-		$vals = array( $p['name'], $p['vol'], count( $p['clusters'] ), (int) ( $p['landings'] ?? 0 ), (int) ( $p['blogs'] ?? 0 ), (int) ( $p['p1'] ?? 0 ), (int) ( $p['new'] ?? 0 ), (int) round( $p['traffic'] ?? 0 ), (int) round( $p['revenue'] ?? 0 ) );
+		$vals = array( $p['name'], $p['vol'], count( $p['clusters'] ), (int) ( $p['landings'] ?? 0 ), (int) ( $p['blogs'] ?? 0 ), (int) ( $p['p1'] ?? 0 ), (int) ( $p['new'] ?? 0 ), (int) round( $p['traffic'] ?? 0 ), (int) round( $p['revenue'] ?? 0 ), (int) ( $p['sales_rev'] ?? 0 ) );
 		foreach ( $vals as $i => $v ) {
 			$d['cells'][ $r ][ $i + 2 ] = qtb_c( $v, qtb_xs_td( 0 === $i ? array( 'b' => true ) : array( 'fmt' => '#,##0', 'h' => 'center' ) ) );
 		}

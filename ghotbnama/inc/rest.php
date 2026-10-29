@@ -217,6 +217,22 @@ function qtb_rest_download( $req ) {
  */
 function qtb_rest_test( $req ) {
 	qtb_raise_limits( 120 );
+	// Test what is on the screen, even before «ذخیره»: unsaved form values override the stored ones.
+	$form = (array) ( $req->get_json_params()['form'] ?? array() );
+	if ( $form ) {
+		$s = qtb_settings();
+		foreach ( array_keys( qtb_settings_defaults() ) as $k ) {
+			if ( ! isset( $form[ $k ] ) || is_array( $form[ $k ] ) ) {
+				continue;
+			}
+			$v = trim( (string) $form[ $k ] );
+			if ( in_array( $k, QTB_SECRET_KEYS, true ) && ( '' === $v || false !== strpos( $v, '•' ) ) ) {
+				continue; // Masked placeholder: keep the stored secret.
+			}
+			$s[ $k ] = $v;
+		}
+		$GLOBALS['qtb_settings_cache'] = $s;
+	}
 	switch ( $req['what'] ) {
 		case 'ai':
 			if ( ! qtb_ai_connected() ) {
@@ -228,7 +244,7 @@ function qtb_rest_test( $req ) {
 			}, $t['steps'] );
 			return array( 'ok' => $t['ok'], 'msg' => implode( "\n", $lines ) );
 		case 'serp':
-			return qtb_serp_ready() ? qtb_serp_test() : array( 'ok' => false, 'msg' => 'سرویس نتایج گوگل تنظیم نشده است (حالت رایگان).' );
+			return qtb_serp_ready() ? qtb_serp_test() : array( 'ok' => false, 'msg' => qtb_serp_off_reason() );
 		default:
 			$tok = qtb_google_token();
 			return is_wp_error( $tok ) ? array( 'ok' => false, 'msg' => $tok->get_error_message() ) : array( 'ok' => true, 'msg' => 'اتصال گوگل برقرار است.' . ( qtb_google_service_email() ? ' شیت‌ها را با ' . qtb_google_service_email() . ' به‌اشتراک بگذارید (Editor).' : '' ) );

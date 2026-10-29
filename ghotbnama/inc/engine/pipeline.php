@@ -374,7 +374,7 @@ function qtb_step_serp_cluster( $project, &$job ) {
 	}
 	$clusters = qtb_clusters_build( $kws, $groups, $serps, qtb_project_domain( $project ) );
 	$clusters = qtb_attach_orphans( $kws, $clusters );
-	qtb_data_put( $project['id'], 'clusters', $clusters );
+	qtb_data_put( $project['id'], 'clusters_wip', $clusters );
 	qtb_job_log( $job, $serps
 		? sprintf( 'با نتایج گوگل %s گروه به %s کلاستر رسید (ادغام مترادف‌ها و تفکیک نیت‌های متفاوت).', qtb_num( $before ), qtb_num( count( $clusters ) ) )
 		: sprintf( '%s کلاستر ساخته شد.', qtb_num( count( $clusters ) ) ) );
@@ -394,7 +394,14 @@ function qtb_step_inventory( $project, &$job, $deadline ) {
 		}
 	}
 	$items = (array) ( $state['items'] ?? array() );
-	qtb_data_put( $project['id'], 'inventory', array( 'items' => $items, 'source' => $state['source'] ?? '', 'notes' => $state['notes'] ?? array(), 'at' => qtb_now() ) );
+	$sales = (array) ( $state['sales'] ?? array() );
+	qtb_data_put( $project['id'], 'inventory', array( 'items' => $items, 'sales' => $sales, 'source' => $state['source'] ?? '', 'notes' => $state['notes'] ?? array(), 'at' => qtb_now() ) );
+	if ( ! empty( $sales['orders'] ) ) {
+		qtb_job_log( $job, sprintf( 'فروش ۹۰ روز اخیر: %s سفارش، %s، میانگین سبد %s؛ سهم ارگانیک %s.', qtb_num( $sales['orders'] ), qtb_money( $sales['revenue'] ), qtb_money( $sales['revenue'] / max( 1, $sales['orders'] ) ), qtb_pct( $sales['organic_orders'] / max( 1, $sales['orders'] ) ) ) );
+	}
+	foreach ( (array) ( $state['notes'] ?? array() ) as $note ) {
+		qtb_job_log( $job, $note, 'warn' );
+	}
 	if ( $items ) {
 		$by = array_count_values( array_column( $items, 'type' ) );
 		qtb_job_log( $job, sprintf( 'صفحات سایت از %s: %s محصول، %s دسته، %s مقاله، %s برگه.', qtb_store_source_label( $state['source'] ), qtb_num( $by['product'] ?? 0 ), qtb_num( $by['category'] ?? 0 ), qtb_num( $by['post'] ?? 0 ), qtb_num( $by['page'] ?? 0 ) ) );
@@ -411,7 +418,7 @@ function qtb_step_inventory( $project, &$job, $deadline ) {
  */
 function qtb_step_structure( $project, &$job, $deadline ) {
 	$kws      = qtb_data_get( $project['id'], 'keywords', array() );
-	$clusters = qtb_data_get( $project['id'], 'clusters', array() );
+	$clusters = qtb_data_get( $project['id'], 'clusters_wip', array() ) ?: qtb_data_get( $project['id'], 'clusters', array() ); // «بازسازی ساختار» starts from the last result.
 	if ( qtb_ai_connected() && empty( $job['sub']['ai_off'] ) ) {
 		// Related clusters together: order by the free pillar.
 		if ( ! isset( $job['sub']['order'] ) ) {
@@ -465,7 +472,7 @@ function qtb_step_structure( $project, &$job, $deadline ) {
 			$job['sub']['merge'] = array_merge( $job['sub']['merge'], $res['merge'] );
 			$job['sub']['off']  += $size;
 			$job['sub']['frac']  = min( 0.95, $job['sub']['off'] / max( 1, count( $order ) ) );
-			qtb_data_put( $project['id'], 'clusters', $clusters );
+			qtb_data_put( $project['id'], 'clusters_wip', $clusters );
 			if ( qtb_out_of_time( $deadline ) && $job['sub']['off'] < count( $order ) ) {
 				return false;
 			}
@@ -478,8 +485,8 @@ function qtb_step_structure( $project, &$job, $deadline ) {
 	}
 	$clusters = qtb_clusters_reindex( $kws, $clusters );
 	$built    = qtb_structure_build( $kws, $clusters );
-	qtb_data_put( $project['id'], 'clusters', $built['clusters'] );
-	qtb_data_put( $project['id'], 'pillars', $built['pillars'] );
+	qtb_data_put( $project['id'], 'clusters_wip', $built['clusters'] );
+	qtb_data_put( $project['id'], 'pillars_wip', $built['pillars'] );
 	qtb_job_log( $job, sprintf( '%s پیلار و %s کلاستر.', qtb_num( count( $built['pillars'] ) ), qtb_num( count( $built['clusters'] ) ) ) );
 	return true;
 }
@@ -490,14 +497,17 @@ function qtb_step_structure( $project, &$job, $deadline ) {
 function qtb_step_score( $project, &$job ) {
 	$kws      = qtb_data_get( $project['id'], 'keywords', array() );
 	$work     = qtb_data_get( $project['id'], 'work', array() );
-	$clusters = qtb_data_get( $project['id'], 'clusters', array() );
-	$pillars  = qtb_data_get( $project['id'], 'pillars', array() );
+	$clusters = qtb_data_get( $project['id'], 'clusters_wip', array() );
+	$pillars  = qtb_data_get( $project['id'], 'pillars_wip', array() );
 	$inv      = (array) ( qtb_data_get( $project['id'], 'inventory', array() )['items'] ?? array() );
 	$clusters = qtb_map_clusters( $kws, $clusters, $inv, (array) ( $work['fillers'] ?? array() ) );
-	$clusters = qtb_score_clusters( $project, $clusters, $pillars, $inv );
-	$pillars  = qtb_pillar_totals( $clusters, $pillars );
+	$sales    = (array) ( qtb_data_get( $project['id'], 'inventory', array() )['sales'] ?? array() );
+	$clusters = qtb_score_clusters( $project, $clusters, $pillars, $inv, $sales );
+	$pillars  = qtb_pillar_totals( $clusters, $pillars, $inv, $sales );
 	qtb_data_put( $project['id'], 'clusters', $clusters );
 	qtb_data_put( $project['id'], 'pillars', $pillars );
+	// Only now the screens see the new result (never a half-built one).
+	qtb_data_delete( $project['id'], array( 'clusters_wip', 'pillars_wip' ) );
 	$cov = array_count_values( array_column( $clusters, 'coverage' ) );
 	qtb_job_log( $job, sprintf( 'صفحه جدید لازم: %s، صفحه موجود برای بهینه‌سازی: %s، رتبه خوب: %s، برد سریع: %s.', qtb_num( $cov['new'] ?? 0 ), qtb_num( $cov['optimize'] ?? 0 ), qtb_num( $cov['ok'] ?? 0 ), qtb_num( count( array_filter( array_column( $clusters, 'quick_win' ) ) ) ) ) );
 	return true;
@@ -621,6 +631,10 @@ function qtb_step_finish( $project, &$job ) {
 	$meta['serp_new']   = (int) $job['stats']['serp_new'];
 	$meta['serp_cache'] = (int) $job['stats']['serp_cache'];
 	$meta['serp_mode']  = qtb_serp_mode( $project );
+	$inv_data           = qtb_data_get( $project['id'], 'inventory', array() );
+	$meta['store']      = array( 'source' => (string) ( $inv_data['source'] ?? '' ), 'items' => count( (array) ( $inv_data['items'] ?? array() ) ) );
+	$sl                 = (array) ( $inv_data['sales'] ?? array() );
+	$meta['sales']      = array( 'orders' => (int) ( $sl['orders'] ?? 0 ), 'revenue' => (float) ( $sl['revenue'] ?? 0 ), 'organic_orders' => (int) ( $sl['organic_orders'] ?? 0 ), 'organic_revenue' => (float) ( $sl['organic_revenue'] ?? 0 ) );
 	$meta['built']      = qtb_now();
 	qtb_data_put( $project['id'], 'meta', $meta );
 	qtb_job_log( $job, sprintf( 'تمام شد: %s کلاستر در %s پیلار؛ هزینه هوش مصنوعی حدود %s دلار، %s درخواست جدید نتایج گوگل.', qtb_num( count( $clusters ) ), qtb_num( count( $pillars ) ), qtb_num( $cost, 3 ), qtb_num( $meta['serp_new'] ) ) );
@@ -646,6 +660,9 @@ function qtb_step_gsheet( $project, &$job, $deadline ) {
 		return false;
 	}
 	qtb_job_log( $job, sprintf( 'خروجی در گوگل شیت نوشته شد (%s تب).', qtb_num( $res['tabs'] ) ) );
+	foreach ( $res['errors'] as $e ) {
+		qtb_job_log( $job, 'هشدار گوگل شیت: ' . $e, 'warn' );
+	}
 	return true;
 }
 

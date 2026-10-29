@@ -45,7 +45,7 @@ function qtb_handle_post( $route ) {
 				'input_tab'    => sanitize_text_field( (string) ( $post['input_tab'] ?? '' ) ) ?: 'کلمات کلیدی',
 				'output_url'   => esc_url_raw( trim( (string) ( $post['output_url'] ?? '' ) ) ),
 				'auto_write'   => empty( $post['auto_write'] ) ? 0 : 1,
-				'store_mode'   => in_array( $post['store_mode'] ?? '', array( 'auto', 'local', 'woo_rest', 'wp_rest', 'sitemap', 'none' ), true ) ? $post['store_mode'] : 'auto',
+				'store_mode'   => in_array( $post['store_mode'] ?? '', array( 'auto', 'connector', 'local', 'woo_rest', 'wp_rest', 'sitemap', 'none' ), true ) ? $post['store_mode'] : 'auto',
 				'woo_key'      => sanitize_text_field( (string) ( $post['woo_key'] ?? '' ) ),
 				'serp_mode'    => in_array( $post['serp_mode'] ?? '', array( 'auto', 'free', 'economy', 'full' ), true ) ? $post['serp_mode'] : 'auto',
 				'serp_cap'     => max( 0, (int) ( $post['serp_cap'] ?? 0 ) ),
@@ -59,11 +59,15 @@ function qtb_handle_post( $route ) {
 				'aov'          => max( 0, (int) preg_replace( '/\D/', '', qtb_norm( (string) ( $post['aov'] ?? 0 ) ) ) ),
 				'gap_limit'    => max( 0, min( 200, (int) ( $post['gap_limit'] ?? 40 ) ) ),
 			);
-			$secret = trim( (string) ( $post['woo_secret'] ?? '' ) );
-			if ( '' !== $secret && false === strpos( $secret, '•' ) ) {
-				$cfg['woo_secret'] = $secret;
-			} elseif ( $id ) {
-				$cfg['woo_secret'] = qtb_project( $id )['cfg']['woo_secret'] ?? '';
+			foreach ( array( 'woo_secret', 'connector_key' ) as $k ) {
+				$secret = trim( (string) ( $post[ $k ] ?? '' ) );
+				if ( '' !== $secret && false === strpos( $secret, '•' ) ) {
+					$cfg[ $k ] = $secret;
+				} elseif ( $id && empty( $post[ $k . '_clear' ] ) ) {
+					$cfg[ $k ] = qtb_project( $id )['cfg'][ $k ] ?? '';
+				} else {
+					$cfg[ $k ] = '';
+				}
 			}
 			$id = qtb_project_save( array( 'name' => $name, 'site_url' => $site, 'cfg' => $cfg ), $id );
 			qtb_flash_set( 'تنظیمات پروژه ذخیره شد.' );

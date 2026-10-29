@@ -264,12 +264,35 @@ function qtb_serp_from_dfs( $d ) {
 }
 
 /**
+ * Why no SERP source is active (for the settings test).
+ */
+function qtb_serp_off_reason() {
+	$s  = qtb_settings();
+	$sk = qtb_sokan_settings();
+	if ( 'off' === $s['serp_source'] ) {
+		return 'گزینه «رایگان (بدون گوگل)» انتخاب شده است؛ برای بررسی ۱۰ نتیجه اول، «کلید جداگانه» را انتخاب و کلید را وارد کنید.';
+	}
+	if ( 'sokan' === $s['serp_source'] && '' === (string) ( $sk['serp_key'] ?? '' ) && '' === $s['serp_key'] ) {
+		return 'گزینه «کلید سکان» انتخاب شده ولی سکان کلید نتایج گوگل ندارد. «کلید جداگانه» را انتخاب کنید، کلید Serper را وارد کنید و «ذخیره تنظیمات» را بزنید.';
+	}
+	if ( 'dataforseo' === $s['serp_provider'] ) {
+		return 'سرویس DataForSEO انتخاب شده ولی Login یا Password آن خالی است. اگر کلید Serper دارید، در فهرست «سرویس» گزینه Serper.dev را انتخاب کنید.';
+	}
+	return 'کلید API خالی است؛ کلید Serper را در فیلد «کلید API» وارد کنید و ذخیره کنید.';
+}
+
+/**
  * Settings page test: one live request with a sample keyword.
  */
 function qtb_serp_test() {
+	$c = qtb_serp_conf();
 	$r = qtb_serp_fetch( 'خرید گل آپارتمانی' );
 	if ( is_wp_error( $r ) ) {
-		return array( 'ok' => false, 'msg' => $r->get_error_message() );
+		$msg = $r->get_error_message();
+		if ( 'qtb_serp_http' === $r->get_error_code() && ! qtb_proxy_defined() ) {
+			$msg .= ' — اگر سرور در ایران است، سرویس‌های SERP معمولاً فقط از طریق پروکسی در دسترس‌اند (WP_PROXY_HOST در wp-config).';
+		}
+		return array( 'ok' => false, 'msg' => sprintf( '[%s، %s] %s', $c['provider'], 'sokan' === $c['source'] ? 'کلید سکان' : 'کلید جداگانه', $msg ) );
 	}
 	return array( 'ok' => count( $r['organic'] ) > 0, 'msg' => sprintf( 'موفق؛ %s نتیجه گرفته شد (اول: %s).', qtb_num( count( $r['organic'] ) ), $r['organic'][0]['domain'] ?? '—' ) );
 }

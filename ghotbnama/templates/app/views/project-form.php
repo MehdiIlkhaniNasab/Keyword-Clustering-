@@ -87,10 +87,13 @@ if ( $is_new ) :
 			<label>میانگین سبد خرید (تومان) <small>۰ = از قیمت محصولات سایت</small><input type="text" name="aov" dir="ltr" value="<?php echo esc_attr( (int) $cfg['aov'] ); ?>"></label>
 			<label>اتصال به محصولات و صفحات سایت
 				<select name="store_mode" data-qtb-toggle="woo">
-					<?php qtb_options( array( 'auto' => 'خودکار (پیشنهادی)', 'local' => 'همین وردپرس (ووکامرس)', 'wp_rest' => 'API عمومی ووکامرس/وردپرس سایت', 'woo_rest' => 'API ووکامرس با کلید', 'sitemap' => 'فقط سایت‌مپ', 'none' => 'بدون اتصال' ), $cfg['store_mode'] ); ?>
+					<?php qtb_options( array( 'auto' => 'خودکار (پیشنهادی)', 'connector' => 'افزونه رابط (SeoReport Connector)', 'local' => 'همین وردپرس (ووکامرس)', 'wp_rest' => 'API عمومی ووکامرس/وردپرس سایت', 'woo_rest' => 'API ووکامرس با کلید', 'sitemap' => 'فقط سایت‌مپ', 'none' => 'بدون اتصال' ), $cfg['store_mode'] ); ?>
 				</select>
 			</label>
 		</div>
+		<label>کلید افزونه رابط (SeoReport Connector) <small>همان افزونه رابط گزارش سئو (نسخه ۱٫۲٫۰ به بعد) روی سایت کارفرما؛ کلید در «تنظیمات › SeoReport Connector» آن سایت است. محصولات، قیمت‌ها، دسته‌ها، مقالات و فروش ۹۰ روز اخیر از آن خوانده می‌شود.</small>
+			<input type="password" name="connector_key" dir="ltr" autocomplete="off" value="<?php echo esc_attr( qtb_mask( $cfg['connector_key'] ) ); ?>">
+		</label>
 		<div class="qtb-grid-2" data-qtb-when="woo">
 			<label>Consumer Key ووکامرس <small>اختیاری؛ فقط برای فروشگاه‌هایی که API عمومی را بسته‌اند</small><input type="text" name="woo_key" dir="ltr" value="<?php echo esc_attr( $cfg['woo_key'] ); ?>"></label>
 			<label>Consumer Secret<input type="password" name="woo_secret" dir="ltr" value="<?php echo esc_attr( qtb_mask( $cfg['woo_secret'] ) ); ?>" autocomplete="off"></label>

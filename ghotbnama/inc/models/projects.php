@@ -20,7 +20,8 @@ function qtb_project_defaults() {
 		'input_tab'      => 'کلمات کلیدی',
 		'output_url'     => '',           // Output Google Sheet ('' = the input sheet).
 		'auto_write'     => 0,            // Write the result into Google Sheets after each run.
-		'store_mode'     => 'auto',       // auto|local|woo_rest|wp_rest|sitemap|none.
+		'store_mode'     => 'auto',       // auto|connector|local|woo_rest|wp_rest|sitemap|none.
+		'connector_key'  => '',           // SeoReport Connector key on the client site (products, sales).
 		'woo_key'        => '',
 		'woo_secret'     => '',
 		'serp_mode'      => 'auto',       // auto|free|economy|full.
@@ -46,8 +47,10 @@ function qtb_project_row( $row ) {
 	}
 	$cfg = json_decode( (string) $row['config'], true );
 	$cfg = wp_parse_args( is_array( $cfg ) ? $cfg : array(), qtb_project_defaults() );
-	if ( '' !== (string) $cfg['woo_secret'] ) {
-		$cfg['woo_secret'] = qtb_decrypt( $cfg['woo_secret'] );
+	foreach ( array( 'woo_secret', 'connector_key' ) as $k ) {
+		if ( '' !== (string) $cfg[ $k ] ) {
+			$cfg[ $k ] = qtb_decrypt( $cfg[ $k ] );
+		}
 	}
 	return array(
 		'id'         => (int) $row['id'],
@@ -87,8 +90,10 @@ function qtb_project_save( $data, $id = 0 ) {
 	global $wpdb;
 	$old = $id ? qtb_project( $id ) : null;
 	$cfg = wp_parse_args( (array) ( $data['cfg'] ?? array() ), $old ? $old['cfg'] : qtb_project_defaults() );
-	if ( '' !== (string) $cfg['woo_secret'] ) {
-		$cfg['woo_secret'] = qtb_encrypt( $cfg['woo_secret'] );
+	foreach ( array( 'woo_secret', 'connector_key' ) as $k ) {
+		if ( '' !== (string) $cfg[ $k ] ) {
+			$cfg[ $k ] = qtb_encrypt( $cfg[ $k ] );
+		}
 	}
 	$row = array(
 		'name'       => sanitize_text_field( (string) ( $data['name'] ?? ( $old['name'] ?? '' ) ) ),

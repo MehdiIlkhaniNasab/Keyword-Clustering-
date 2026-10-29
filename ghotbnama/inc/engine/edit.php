@@ -193,8 +193,9 @@ function qtb_edit_finish( $project, $kws, $clusters, $removed ) {
 	$out = qtb_sort( $out, 'vol' );
 	$asm = qtb_pillars_assemble( $out );
 	$inv = (array) ( qtb_data_get( $pid, 'inventory', array() )['items'] ?? array() );
-	$cls = qtb_score_clusters( $project, $asm['clusters'], $asm['pillars'], $inv );
-	$pls = qtb_pillar_totals( $cls, $asm['pillars'] );
+	$sal = (array) ( qtb_data_get( $pid, 'inventory', array() )['sales'] ?? array() );
+	$cls = qtb_score_clusters( $project, $asm['clusters'], $asm['pillars'], $inv, $sal );
+	$pls = qtb_pillar_totals( $cls, $asm['pillars'], $inv, $sal );
 	qtb_data_put( $pid, 'keywords', $kws );
 	qtb_data_put( $pid, 'clusters', $cls );
 	qtb_data_put( $pid, 'pillars', $pls );

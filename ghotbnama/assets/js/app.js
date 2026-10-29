@@ -266,7 +266,7 @@
 					msg.textContent = d.done ? 'نوشته شد (' + fa( d.tabs ) + ' تب).' : 'در حال نوشتن… ' + fa( d.pct ) + '٪';
 					if ( d.done ) {
 						b.disabled = false;
-						toast( 'خروجی در گوگل شیت نوشته شد' );
+						toast( d.errors && d.errors.length ? 'نوشته شد، با هشدار: ' + d.errors[ 0 ] : 'خروجی در گوگل شیت نوشته شد', !! ( d.errors && d.errors.length ) );
 						var a = document.createElement( 'a' );
 						a.href = d.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = ' باز کردن شیت';
 						msg.appendChild( a );
@@ -287,8 +287,13 @@
 		var out = $( '[data-qtb-test-out="' + what + '"]' );
 		b.disabled = true;
 		out.hidden = false;
-		out.textContent = 'در حال تست… (اگر تنظیمات را تغییر داده‌اید، اول ذخیره کنید)';
-		api( 'test/' + what ).then( function ( d ) {
+		out.textContent = 'در حال تست با مقادیر همین صفحه… (برای ماندگاری، «ذخیره تنظیمات» را هم بزنید)';
+		var form = b.closest( 'form' );
+		var vals = {};
+		if ( form ) {
+			new FormData( form ).forEach( function ( v, k ) { if ( 'string' === typeof v ) { vals[ k ] = v; } } );
+		}
+		api( 'test/' + what, { form: vals } ).then( function ( d ) {
 			out.textContent = ( d.ok ? '✓ ' : '✗ ' ) + d.msg;
 			out.style.color = d.ok ? 'var(--accent-ink)' : 'var(--bad)';
 		} ).catch( function ( err ) { out.textContent = '✗ ' + err.message; out.style.color = 'var(--bad)'; } ).then( function () { b.disabled = false; } );

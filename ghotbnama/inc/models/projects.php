@@ -21,7 +21,8 @@ function qtb_project_defaults() {
 		'output_url'     => '',           // Output Google Sheet ('' = the input sheet).
 		'auto_write'     => 0,            // Write the result into Google Sheets after each run.
 		'store_mode'     => 'auto',       // auto|connector|local|woo_rest|wp_rest|sitemap|none.
-		'connector_key'  => '',           // SeoReport Connector key on the client site (products, sales).
+		'connector_key'  => '',           // Connector «Sokan key» (inventory); '' = taken from the Sokan project of the same site.
+		'report_key'     => '',           // Connector «SeoReport key» (orders of the last 90 days), optional.
 		'woo_key'        => '',
 		'woo_secret'     => '',
 		'serp_mode'      => 'auto',       // auto|free|economy|full.
@@ -47,7 +48,7 @@ function qtb_project_row( $row ) {
 	}
 	$cfg = json_decode( (string) $row['config'], true );
 	$cfg = wp_parse_args( is_array( $cfg ) ? $cfg : array(), qtb_project_defaults() );
-	foreach ( array( 'woo_secret', 'connector_key' ) as $k ) {
+	foreach ( array( 'woo_secret', 'connector_key', 'report_key' ) as $k ) {
 		if ( '' !== (string) $cfg[ $k ] ) {
 			$cfg[ $k ] = qtb_decrypt( $cfg[ $k ] );
 		}
@@ -90,7 +91,7 @@ function qtb_project_save( $data, $id = 0 ) {
 	global $wpdb;
 	$old = $id ? qtb_project( $id ) : null;
 	$cfg = wp_parse_args( (array) ( $data['cfg'] ?? array() ), $old ? $old['cfg'] : qtb_project_defaults() );
-	foreach ( array( 'woo_secret', 'connector_key' ) as $k ) {
+	foreach ( array( 'woo_secret', 'connector_key', 'report_key' ) as $k ) {
 		if ( '' !== (string) $cfg[ $k ] ) {
 			$cfg[ $k ] = qtb_encrypt( $cfg[ $k ] );
 		}

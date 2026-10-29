@@ -59,7 +59,7 @@ function qtb_handle_post( $route ) {
 				'aov'          => max( 0, (int) preg_replace( '/\D/', '', qtb_norm( (string) ( $post['aov'] ?? 0 ) ) ) ),
 				'gap_limit'    => max( 0, min( 200, (int) ( $post['gap_limit'] ?? 40 ) ) ),
 			);
-			foreach ( array( 'woo_secret', 'connector_key' ) as $k ) {
+			foreach ( array( 'woo_secret', 'connector_key', 'report_key' ) as $k ) {
 				$secret = trim( (string) ( $post[ $k ] ?? '' ) );
 				if ( '' !== $secret && false === strpos( $secret, '•' ) ) {
 					$cfg[ $k ] = $secret;

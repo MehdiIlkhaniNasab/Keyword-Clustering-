@@ -6,9 +6,11 @@
  *
  * Sources (store_mode «auto» tries them in this order and skips silently when
  * one is not available):
- *   connector — the SeoReport Connector plugin on the client site (v1.2.0+): products
- *               with price, categories, lifetime sales, posts, pages, plus the orders
- *               of the last 90 days (real AOV and sales per product).
+ *   connector — the SeoReport Connector plugin on the client site (v1.5, the one Sokan
+ *               uses): products with price and categories, product categories, tags,
+ *               brands, posts and pages through /sokan/inventory (Sokan key — taken
+ *               from the Sokan project of the same site when not entered), plus the
+ *               orders of the last 90 days through /orders (SeoReport key, optional).
  *   local    — this WordPress site (WooCommerce tables), when the project's domain is this site.
  *   woo_rest — WooCommerce REST API v3 with consumer key / secret (private stores).
  *   wp_rest  — public WooCommerce Store API + WordPress REST API (no keys needed).
@@ -43,7 +45,7 @@ function qtb_store_sources( $project ) {
 		return array( $mode );
 	}
 	$out = array();
-	if ( '' !== (string) $project['cfg']['connector_key'] && ! qtb_store_is_local( $project ) ) {
+	if ( qtb_connector_conf( $project ) && ! qtb_store_is_local( $project ) ) {
 		$out[] = 'connector';
 	}
 	if ( qtb_store_is_local( $project ) ) {
@@ -107,6 +109,14 @@ function qtb_store_step( $project, $state ) {
 			$state['sales'] = $r['sales'];
 		}
 		if ( ! empty( $r['finished'] ) ) {
+			if ( 'connector' === $src && ! empty( $state['sales']['currency'] ) ) {
+				foreach ( $state['items'] as &$it ) {
+					if ( isset( $it['price'] ) ) {
+						$it['price'] = qtb_to_toman( (float) $it['price'], $state['sales']['currency'] );
+					}
+				}
+				unset( $it );
+			}
 			if ( $state['items'] ) {
 				$state['source'] = $src;
 				$state['done']   = true;
@@ -213,6 +223,55 @@ function qtb_sales_add( $s, $order ) {
 }
 
 /**
+ * Connector connection of a project: {url, key, report_key, from} or null.
+ * The Sokan key is the project's own, else the one Sokan saved for the same site.
+ */
+function qtb_connector_conf( $project ) {
+	$cfg  = $project['cfg'];
+	$url  = qtb_project_root( $project );
+	$key  = (string) $cfg['connector_key'];
+	$from = 'project';
+	if ( '' === $key ) {
+		$sk = qtb_sokan_site_conn( qtb_project_domain( $project ) );
+		if ( $sk ) {
+			$key  = $sk['key'];
+			$url  = $sk['url'] ?: $url;
+			$from = 'sokan';
+		}
+	}
+	if ( '' === $key && '' === (string) $cfg['report_key'] ) {
+		return null;
+	}
+	return array( 'url' => untrailingslashit( $url ), 'key' => $key, 'report_key' => (string) $cfg['report_key'], 'from' => $from );
+}
+
+/**
+ * The connector of the Sokan project with the same domain (url + decrypted Sokan key).
+ */
+function qtb_sokan_site_conn( $domain ) {
+	global $wpdb;
+	$t = $wpdb->prefix . 'sap_projects';
+	if ( '' === $domain ) {
+		return null;
+	}
+	$quiet = $wpdb->suppress_errors( true );
+	$rows  = $wpdb->get_results( "SELECT site_url, options FROM $t", ARRAY_A ); // phpcs:ignore -- Sokan's table; absent when Sokan never ran here.
+	$wpdb->suppress_errors( $quiet );
+	foreach ( (array) $rows as $row ) {
+		$opt = json_decode( (string) $row['options'], true ) ?: array();
+		$url = (string) ( $opt['site_url'] ?? '' ) ?: (string) $row['site_url'];
+		if ( qtb_host( $url ?: (string) $row['site_url'] ) !== $domain && qtb_host( (string) $row['site_url'] ) !== $domain ) {
+			continue;
+		}
+		$key = qtb_decrypt( (string) ( $opt['site_key'] ?? '' ), 'seo-action-plan' );
+		if ( '' !== $key ) {
+			return array( 'url' => $url, 'key' => $key );
+		}
+	}
+	return null;
+}
+
+/**
  * Site root of a project (for REST calls).
  */
 function qtb_project_root( $project ) {
@@ -220,24 +279,41 @@ function qtb_project_root( $project ) {
 }
 
 /**
- * GET a SeoReport Connector route.
+ * GET a SeoReport Connector route (falls back to ?rest_route= on sites without pretty permalinks).
  *
+ * @param bool $report true: SeoReport key (/orders); false: Sokan key (/sokan/*).
  * @return array|WP_Error decoded JSON
  */
-function qtb_connector_get( $project, $route, $args = array() ) {
-	$key = (string) $project['cfg']['connector_key'];
-	$url = add_query_arg( array_merge( $args, array( 'key' => rawurlencode( $key ) ) ), qtb_project_root( $project ) . '/wp-json/seoreport-connector/v1/' . $route );
-	$res = qtb_http( $url, array( 'timeout' => 45, 'headers' => array( 'X-SR-Key' => $key, 'Accept' => 'application/json' ) ) );
-	if ( is_wp_error( $res ) ) {
-		return new WP_Error( 'qtb_conn_net', qtb_net_error( $res ) );
+function qtb_connector_get( $project, $route, $args = array(), $report = false ) {
+	$c = qtb_connector_conf( $project );
+	if ( ! $c ) {
+		return new WP_Error( 'qtb_conn_key', 'کلید افزونه رابط وارد نشده است.' );
 	}
-	$code = (int) wp_remote_retrieve_response_code( $res );
-	$data = json_decode( (string) wp_remote_retrieve_body( $res ), true );
+	$key = $report ? $c['report_key'] : $c['key'];
+	if ( '' === $key ) {
+		return new WP_Error( 'qtb_conn_key', $report ? 'کلید گزارش (SeoReport) وارد نشده است.' : 'کلید سکان افزونه رابط وارد نشده است.' );
+	}
+	$args = array_merge( $args, $report ? array( 'key' => $key ) : array( 'skey' => $key ) );
+	$path = 'seoreport-connector/v1/' . $route;
+	$head = array( $report ? 'X-SR-Key' : 'X-Sokan-Key' => $key, 'Accept' => 'application/json' );
+	$res  = null;
+	foreach ( array( add_query_arg( $args, $c['url'] . '/wp-json/' . $path ), add_query_arg( array_merge( $args, array( 'rest_route' => '/' . $path ) ), $c['url'] . '/' ) ) as $i => $url ) {
+		$res = qtb_http( $url, array( 'timeout' => 60, 'headers' => $head ) );
+		if ( is_wp_error( $res ) ) {
+			return new WP_Error( 'qtb_conn_net', qtb_net_error( $res ) );
+		}
+		$code = (int) wp_remote_retrieve_response_code( $res );
+		$data = json_decode( (string) wp_remote_retrieve_body( $res ), true );
+		if ( 404 === $code && 0 === $i && 'rest_no_route' !== ( $data['code'] ?? '' ) ) {
+			continue; // /wp-json/ itself missing: try ?rest_route=.
+		}
+		break;
+	}
 	if ( 403 === $code ) {
-		return new WP_Error( 'qtb_conn_key', 'کلید افزونه رابط پذیرفته نشد؛ کلید را از «تنظیمات › SeoReport Connector» سایت کپی کنید.' );
+		return new WP_Error( 'qtb_conn_key', $report ? 'کلید گزارش (SeoReport) پذیرفته نشد.' : 'کلید سکان افزونه رابط پذیرفته نشد؛ همان کلیدی را بگذارید که در سکان › تنظیمات پروژه › اتصال به سایت وارد شده است.' );
 	}
 	if ( 404 === $code ) {
-		return new WP_Error( 'qtb_conn_404', 'inventory' === $route ? 'افزونه رابط روی سایت نصب نیست یا نسخه آن قدیمی است (نسخه ۱٫۲٫۰ به بعد لازم است).' : (string) ( $data['message'] ?? 'HTTP 404' ), array( 'code' => (string) ( $data['code'] ?? '' ) ) );
+		return new WP_Error( 'qtb_conn_404', 'افزونه رابط روی سایت نصب نیست یا نسخه آن قدیمی است (نسخه ۱٫۵ لازم است؛ همان نسخه‌ای که سکان استفاده می‌کند).' );
 	}
 	if ( 200 !== $code || ! is_array( $data ) ) {
 		return new WP_Error( 'qtb_conn_http', 'افزونه رابط پاسخ نداد (HTTP ' . $code . ').' );
@@ -246,55 +322,80 @@ function qtb_connector_get( $project, $route, $args = array() ) {
 }
 
 /**
- * One page of the connector. Phases: 0 products, 1 categories, 2 posts, 3 pages, 4 orders (90 days).
+ * One page of the connector. Phases: 0 products, 1 product categories, 2 brands,
+ * 3 product tags, 4 posts, 5 pages, 6 orders (90 days).
  */
 function qtb_store_connector_page( $project, $state ) {
-	$phase = (int) $state['phase'];
-	$page  = (int) $state['page'];
-	$types = array( 'product', 'product_cat', 'post', 'page' );
-	if ( $phase < 4 ) {
+	$phase   = (int) $state['phase'];
+	$page    = (int) $state['page'];
+	$sources = array( 'product', 'product_cat', '@brand', 'product_tag', 'post', 'page' );
+	if ( $phase < 6 ) {
+		$c = qtb_connector_conf( $project );
+		if ( ! $c || '' === $c['key'] ) {
+			return 0 === $phase ? new WP_Error( 'qtb_conn_key', 'کلید سکان افزونه رابط وارد نشده است.' ) : array( 'items' => array(), 'phase' => 6, 'page' => 1 );
+		}
+		$src = $sources[ $phase ];
+		if ( '@brand' === $src ) {
+			// Brand taxonomy name differs per plugin: read it from the source list.
+			$src = '';
+			$list = qtb_connector_get( $project, 'sokan/inventory', array( 'source' => '', 'page' => 1, 'per' => 10 ) );
+			foreach ( is_wp_error( $list ) ? array() : (array) ( $list['sources'] ?? array() ) as $sv ) {
+				if ( ! empty( $sv['brand'] ) ) {
+					$src = (string) $sv['key'];
+					break;
+				}
+			}
+			if ( '' === $src ) {
+				return array( 'items' => array(), 'phase' => $phase + 1, 'page' => 1 );
+			}
+		}
 		$per  = 200;
-		$data = qtb_connector_get( $project, 'inventory', array( 'type' => $types[ $phase ], 'page' => $page, 'per_page' => $per ) );
+		$data = qtb_connector_get( $project, 'sokan/inventory', array( 'source' => $src, 'page' => $page, 'per' => $per ) );
 		if ( is_wp_error( $data ) ) {
 			if ( 0 === $phase && 1 === $page ) {
 				return $data;
 			}
 			return array( 'items' => array(), 'phase' => $phase + 1, 'page' => 1 );
 		}
-		$cur   = (string) ( $data['currency'] ?? 'IRT' ) ?: 'IRT';
 		$items = array();
 		foreach ( (array) ( $data['items'] ?? array() ) as $d ) {
-			if ( empty( $d['url'] ) ) {
-				continue;
+			if ( empty( $d['url'] ) || ! empty( $d['redirect'] ) || ! empty( $d['noindex'] ) ) {
+				continue; // Redirected / noindex pages are not targets.
 			}
-			$row = array( 'type' => 'product_cat' === $types[ $phase ] ? 'category' : $types[ $phase ], 'url' => (string) $d['url'], 'title' => (string) $d['title'] );
-			if ( 0 === $phase ) {
-				$row['pid']   = (int) $d['id'];
-				$row['price'] = qtb_to_toman( (float) ( $d['price'] ?? 0 ), $cur );
-				$row['sold']  = (int) ( $d['sales'] ?? 0 );
-				$row['cats']  = (array) ( $d['cats'] ?? array() );
-				$row['stock'] = (string) ( $d['stock'] ?? '' );
-			} elseif ( 1 === $phase ) {
-				$row['count'] = (int) ( $d['count'] ?? 0 );
+			if ( 'term' === ( $d['kind'] ?? '' ) ) {
+				$row = array( 'type' => 'category', 'url' => (string) $d['url'], 'title' => (string) $d['title'], 'count' => (int) ( $d['count'] ?? 0 ), 'tax' => (string) ( $d['type'] ?? '' ), 'brand' => ! empty( $d['brand'] ) );
+			} else {
+				$type = in_array( $d['type'] ?? '', array( 'product', 'page' ), true ) ? $d['type'] : 'post';
+				$row  = array( 'type' => $type, 'url' => (string) $d['url'], 'title' => (string) $d['title'], 'words' => (int) ( $d['words'] ?? 0 ) );
+				if ( 'product' === $type ) {
+					$pr           = (array) ( $d['product'] ?? array() );
+					$row['pid']   = (int) $d['id'];
+					$row['price'] = (float) ( $pr['price'] ?? 0 ); // Toman conversion happens with the order currency (see below).
+					$row['cats']  = (array) ( $pr['cats'] ?? array() );
+					$row['stock'] = (string) ( $pr['stock'] ?? '' );
+					$row['rating'] = (float) ( $pr['rating'] ?? 0 );
+				}
 			}
 			$items[] = $row;
 		}
-		$more = $page * $per < (int) ( $data['total'] ?? 0 ) && $page * $per < QTB_STORE_MAX;
-		return $more ? array( 'items' => $items, 'phase' => $phase, 'page' => $page + 1 ) : array( 'items' => $items, 'phase' => $phase + 1, 'page' => 1 );
+		return ! empty( $data['more'] ) && $page * $per < QTB_STORE_MAX
+			? array( 'items' => $items, 'phase' => $phase, 'page' => $page + 1 )
+			: array( 'items' => $items, 'phase' => $phase + 1, 'page' => 1 );
 	}
-	// Orders of the last 90 days (page = offset / 100 + 1).
+	// Orders of the last 90 days (SeoReport key; skipped silently without it).
 	$per    = 100;
 	$offset = ( $page - 1 ) * $per;
-	$data   = qtb_connector_get( $project, 'orders', array( 'after' => gmdate( 'Y-m-d', time() - 90 * DAY_IN_SECONDS ), 'before' => gmdate( 'Y-m-d' ), 'per_page' => $per, 'offset' => $offset ) );
+	$data   = qtb_connector_get( $project, 'orders', array( 'after' => gmdate( 'Y-m-d', time() - 90 * DAY_IN_SECONDS ), 'before' => gmdate( 'Y-m-d' ), 'per_page' => $per, 'offset' => $offset ), true );
 	if ( is_wp_error( $data ) ) {
-		return array( 'items' => array(), 'finished' => true ); // No WooCommerce / orders: inventory is still complete.
+		return array( 'items' => array(), 'finished' => true );
 	}
 	$sales = (array) ( $state['sales'] ?? array() );
 	foreach ( (array) ( $data['orders'] ?? array() ) as $o ) {
 		$sales = qtb_sales_add( $sales, $o );
+		$sales['currency'] = (string) ( $o['currency'] ?? '' );
 	}
 	$done = $offset + $per >= (int) ( $data['total'] ?? 0 ) || $offset + $per >= 3000 || empty( $data['orders'] );
-	return $done ? array( 'items' => array(), 'finished' => true, 'sales' => $sales ) : array( 'items' => array(), 'phase' => 4, 'page' => $page + 1, 'sales' => $sales );
+	return $done ? array( 'items' => array(), 'finished' => true, 'sales' => $sales ) : array( 'items' => array(), 'phase' => 6, 'page' => $page + 1, 'sales' => $sales );
 }
 
 /**

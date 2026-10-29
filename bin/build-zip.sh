@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Build manzoomeh.zip (installable from WordPress › Plugins › Add New › Upload).
+# Build ghotbnama.zip (installable from WordPress › Plugins › Add New › Upload).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION=$(grep -oP "MZM_VERSION\s*=\s*'\K[^']+" manzoomeh/manzoomeh.php)
-OUT="manzoomeh-${VERSION}.zip"
+VERSION=$(grep -oP "QTB_VERSION\s*=\s*'\K[^']+" ghotbnama/ghotbnama.php)
+OUT="ghotbnama-${VERSION}.zip"
 rm -f "$OUT"
-zip -rq "$OUT" manzoomeh -x '*.DS_Store' '*/.git*'
+zip -rq "$OUT" ghotbnama -x '*.DS_Store' '*/.git*'
 echo "Built $OUT"

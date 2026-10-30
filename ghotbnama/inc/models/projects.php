@@ -13,6 +13,12 @@ defined( 'ABSPATH' ) || exit;
 function qtb_project_defaults() {
 	return array(
 		'niche'          => '',           // What the business sells / does (guides relevance and naming).
+		'sells'          => '',           // Business profile: products / services we sell.
+		'not_sells'      => '',           // …and what we do not sell (removed in triage).
+		'services'       => array(),      // Services offered (service queries → landing).
+		'locations'      => array(),      // Cities with a branch (local queries → landing).
+		'priorities'     => '',           // Categories that matter most for sales.
+		'review_mode'    => 'batch',      // AI review of the workshop: batch (≈25 keywords per request) | single (one keyword per request).
 		'brands'         => array(),      // Own brand names (kept, marked as brand).
 		'competitors'    => array(),      // Competitor brands / sites (removed).
 		'negatives'      => array(),      // Extra words that make a keyword useless for this project.

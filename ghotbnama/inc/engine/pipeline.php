@@ -49,7 +49,7 @@ function qtb_serp_mode( $project ) {
  *
  * @param string $source sheet|upload (upload: the input was stored already).
  */
-function qtb_pipeline_start( $project, $source = 'sheet', $from = 'import' ) {
+function qtb_pipeline_start( $project, $source = 'sheet', $from = 'import', $extra = array() ) {
 	$steps = array_keys( qtb_pipeline_steps() );
 	if ( empty( $project['cfg']['auto_write'] ) ) {
 		$steps = array_values( array_diff( $steps, array( 'gsheet' ) ) );
@@ -66,6 +66,7 @@ function qtb_pipeline_start( $project, $source = 'sheet', $from = 'import' ) {
 		'error'   => '',
 		'stats'   => array( 'serp_new' => 0, 'serp_cache' => 0, 'ai_cost0' => qtb_ai_usage()['cost'] ),
 	);
+	$job = array_merge( $job, (array) $extra );
 	qtb_data_put( $project['id'], 'job', $job );
 	qtb_project_status( $project['id'], 'running' );
 	return $job;
@@ -277,7 +278,7 @@ function qtb_step_ai_filter( $project, &$job, $deadline ) {
 function qtb_step_precluster( $project, &$job ) {
 	$kws    = qtb_data_get( $project['id'], 'keywords', array() );
 	$ann    = qtb_annotate( $kws );
-	$groups = qtb_precluster( $kws );
+	$groups = qtb_precluster( $kws, array( 'full_serp' => 'full' === qtb_serp_mode( $project ), 'brands' => array_merge( (array) $project['cfg']['brands'], (array) $project['cfg']['competitors'] ) ) );
 	qtb_data_put( $project['id'], 'keywords', $kws );
 	qtb_data_put( $project['id'], 'work', array( 'groups' => $groups, 'fillers' => $ann['fillers'] ) );
 	qtb_job_log( $job, sprintf( '%s گروه اولیه ساخته شد (کلمات عمومی حذف‌شدنی: %s).', qtb_num( count( $groups ) ), implode( '، ', array_slice( $ann['fillers'], 0, 8 ) ) ?: '—' ) );
@@ -369,7 +370,9 @@ function qtb_step_serp_cluster( $project, &$job ) {
 	$serps  = qtb_data_get( $project['id'], 'serps', array() );
 	$groups = $work['groups'];
 	$before = count( $groups );
-	if ( $serps ) {
+	if ( $serps && 'full' === qtb_serp_mode( $project ) ) {
+		$groups = qtb_serp_cluster_kw( $kws, array_column( $kws, 'i' ), $serps, (int) $project['cfg']['strictness'] );
+	} elseif ( $serps ) {
 		$groups = qtb_serp_cluster( $kws, $groups, $serps, (int) $project['cfg']['strictness'] );
 	}
 	$clusters = qtb_clusters_build( $kws, $groups, $serps, qtb_project_domain( $project ) );
@@ -419,7 +422,8 @@ function qtb_step_inventory( $project, &$job, $deadline ) {
 function qtb_step_structure( $project, &$job, $deadline ) {
 	$kws      = qtb_data_get( $project['id'], 'keywords', array() );
 	$clusters = qtb_data_get( $project['id'], 'clusters_wip', array() ) ?: qtb_data_get( $project['id'], 'clusters', array() ); // «بازسازی ساختار» starts from the last result.
-	if ( qtb_ai_connected() && empty( $job['sub']['ai_off'] ) ) {
+	// Workshop results come reviewed: pillars, sections and pages are the reviewer's.
+	if ( qtb_ai_connected() && empty( $job['sub']['ai_off'] ) && empty( $job['ws'] ) ) {
 		// Related clusters together: order by the free pillar.
 		if ( ! isset( $job['sub']['order'] ) ) {
 			$tmp   = qtb_pillars_free( $kws, $clusters );
@@ -484,6 +488,7 @@ function qtb_step_structure( $project, &$job, $deadline ) {
 		}
 	}
 	$clusters = qtb_clusters_reindex( $kws, $clusters );
+	$clusters = qtb_clusters_decide_pages( $project, $kws, $clusters );
 	$built    = qtb_structure_build( $kws, $clusters );
 	qtb_data_put( $project['id'], 'clusters_wip', $built['clusters'] );
 	qtb_data_put( $project['id'], 'pillars_wip', $built['pillars'] );

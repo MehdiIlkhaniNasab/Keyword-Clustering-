@@ -16,6 +16,11 @@ function qtb_handle_post( $route ) {
 		return;
 	}
 	$action = sanitize_key( wp_unslash( $_POST['qtb_action'] ) ); // phpcs:ignore
+	if ( ! qtb_can() ) {
+		qtb_flash_set( 'این کار فقط برای مدیر سئو مجاز است.', false );
+		wp_safe_redirect( qtb_url( $route ) );
+		exit;
+	}
 	if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_qtb_nonce'] ?? '' ) ), 'qtb_' . $action ) ) { // phpcs:ignore
 		qtb_flash_set( 'نشست منقضی شد؛ دوباره امتحان کنید.', false );
 		wp_safe_redirect( qtb_url( $route ) );
@@ -72,6 +77,26 @@ function qtb_handle_post( $route ) {
 			$id = qtb_project_save( array( 'name' => $name, 'site_url' => $site, 'cfg' => $cfg ), $id );
 			qtb_flash_set( 'تنظیمات پروژه ذخیره شد.' );
 			wp_safe_redirect( empty( $post['project_id'] ) ? qtb_project_url( $id ) : qtb_project_url( $id, 'settings' ) );
+			exit;
+
+		case 'save_profile':
+			$id = absint( $post['project_id'] ?? 0 );
+			if ( ! qtb_project( $id ) ) {
+				break;
+			}
+			qtb_project_save( array( 'cfg' => array(
+				'niche'       => sanitize_textarea_field( (string) ( $post['niche'] ?? '' ) ),
+				'sells'       => sanitize_textarea_field( (string) ( $post['sells'] ?? '' ) ),
+				'not_sells'   => sanitize_textarea_field( (string) ( $post['not_sells'] ?? '' ) ),
+				'services'    => qtb_list( $post['services'] ?? '' ),
+				'locations'   => qtb_list( $post['locations'] ?? '' ),
+				'priorities'  => sanitize_text_field( (string) ( $post['priorities'] ?? '' ) ),
+				'brands'      => qtb_list( $post['brands'] ?? '' ),
+				'competitors' => qtb_list( $post['competitors'] ?? '' ),
+				'review_mode' => 'single' === ( $post['review_mode'] ?? '' ) ? 'single' : 'batch',
+			) ), $id );
+			qtb_flash_set( 'پروفایل کسب‌وکار ذخیره شد.' );
+			wp_safe_redirect( qtb_project_url( $id, 'workshop', array( 'ws' => 'profile' ) ) );
 			exit;
 
 		case 'delete_project':

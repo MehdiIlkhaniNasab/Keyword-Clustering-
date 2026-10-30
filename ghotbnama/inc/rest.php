@@ -250,3 +250,153 @@ function qtb_rest_test( $req ) {
 			return is_wp_error( $tok ) ? array( 'ok' => false, 'msg' => $tok->get_error_message() ) : array( 'ok' => true, 'msg' => 'اتصال گوگل برقرار است.' . ( qtb_google_service_email() ? ' شیت‌ها را با ' . qtb_google_service_email() . ' به‌اشتراک بگذارید (Editor).' : '' ) );
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Clustering workshop.
+// ---------------------------------------------------------------------------
+
+add_action( 'rest_api_init', function () {
+	$ns   = 'ghotbnama/v1';
+	$rev  = function () {
+		return qtb_can_review();
+	};
+	$mng  = function () {
+		return qtb_can();
+	};
+	register_rest_route( $ns, '/ws/start/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_start', 'permission_callback' => $rev ) );
+	register_rest_route( $ns, '/ws/tick/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_tick', 'permission_callback' => $rev ) );
+	register_rest_route( $ns, '/ws/edit/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_edit', 'permission_callback' => $rev ) );
+	register_rest_route( $ns, '/ws/comment/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_comment', 'permission_callback' => $rev ) );
+	register_rest_route( $ns, '/ws/evidence/(?P<id>\d+)', array( 'methods' => 'GET', 'callback' => 'qtb_rest_ws_evidence', 'permission_callback' => $rev ) );
+	register_rest_route( $ns, '/ws/finalize/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_finalize', 'permission_callback' => $mng ) );
+} );
+
+/**
+ * Start a workshop job (one at a time per project).
+ */
+function qtb_rest_ws_start( $req ) {
+	$p = qtb_rest_project( $req );
+	if ( is_wp_error( $p ) ) {
+		return $p;
+	}
+	$cur = qtb_data_get( $p['id'], 'ws_job', array() );
+	if ( $cur && empty( $cur['done'] ) && empty( $cur['error'] ) && ! empty( $cur['started'] ) && strtotime( $cur['started'] ) > time() - 1800 ) {
+		return new WP_Error( 'qtb_ws_busy', 'یک کار دیگر در حال اجراست؛ صبر کنید تا تمام شود.', array( 'status' => 409 ) );
+	}
+	$action = (string) $req['action'];
+	if ( ! in_array( $action, array( 'triage', 'topics', 'topic' ), true ) ) {
+		return new WP_Error( 'qtb_ws', 'کار نامعتبر.', array( 'status' => 400 ) );
+	}
+	// Rebuilding the keyword list or the topics resets the review: managers only.
+	if ( 'topic' !== $action && ! qtb_can() ) {
+		return new WP_Error( 'qtb_ws_denied', 'شروع دوباره غربال یا ساخت دوباره موضوع‌ها با مدیر سئو است.', array( 'status' => 403 ) );
+	}
+	$args = array();
+	if ( 'triage' === $action ) {
+		$args['source'] = 'upload' === $req['source'] || '' === qtb_sheet_id( $p['cfg']['sheet_url'] ) ? 'upload' : 'sheet';
+		if ( 'upload' === $args['source'] && ! qtb_data_get( $p['id'], 'input', array() ) ) {
+			return new WP_Error( 'qtb_ws', 'فایل کلمات بارگذاری نشده و لینک گوگل شیت هم وارد نشده است.', array( 'status' => 400 ) );
+		}
+	}
+	if ( 'topic' === $action ) {
+		$ws = qtb_ws_get( $p['id'] );
+		$ti = qtb_ws_topic_index( $ws, (int) $req['tid'] );
+		if ( null === $ti ) {
+			return new WP_Error( 'qtb_ws', 'موضوع پیدا نشد.', array( 'status' => 404 ) );
+		}
+		if ( in_array( $req['mode'], array( 'batch', 'single' ), true ) ) {
+			$ws['topics'][ $ti ]['mode'] = $req['mode'];
+			qtb_ws_put( $p['id'], $ws );
+		}
+		$args['tid'] = (int) $req['tid'];
+	}
+	qtb_ws_start( $p, $action, $args );
+	return qtb_ws_job_status( qtb_ws_tick( $p['id'], 18 ) );
+}
+
+/**
+ * Continue the workshop job.
+ */
+function qtb_rest_ws_tick( $req ) {
+	$p = qtb_rest_project( $req );
+	if ( is_wp_error( $p ) ) {
+		return $p;
+	}
+	return qtb_ws_job_status( qtb_ws_tick( $p['id'], 20 ) );
+}
+
+/**
+ * Reviewer action.
+ */
+function qtb_rest_ws_edit( $req ) {
+	$p = qtb_rest_project( $req );
+	if ( is_wp_error( $p ) ) {
+		return $p;
+	}
+	$res = qtb_ws_edit( $p, (array) $req->get_json_params() );
+	if ( is_wp_error( $res ) ) {
+		$res->add_data( array( 'status' => 400 ) );
+		return $res;
+	}
+	return true === $res ? array( 'ok' => true ) : $res;
+}
+
+/**
+ * Comment → proposed rules (saved separately after the reviewer confirms).
+ */
+function qtb_rest_ws_comment( $req ) {
+	$p = qtb_rest_project( $req );
+	if ( is_wp_error( $p ) ) {
+		return $p;
+	}
+	$text = trim( (string) $req['text'] );
+	if ( '' === $text ) {
+		return new WP_Error( 'qtb_ws', 'نظر خالی است.', array( 'status' => 400 ) );
+	}
+	$ws = qtb_ws_get( $p['id'] );
+	$ti = qtb_ws_topic_index( $ws, (int) $req['tid'] );
+	if ( null !== $ti ) {
+		qtb_ws_edit( $p, array( 'op' => 'comment', 'tid' => (int) $req['tid'], 'text' => $text ) );
+	}
+	if ( ! qtb_ai_connected() ) {
+		return array( 'reply' => 'هوش مصنوعی متصل نیست؛ نظر ذخیره شد. قانون را دستی اضافه کنید.', 'rules' => array( array( 'kind' => 'note', 'match' => '', 'page' => '', 'archive' => '', 'text' => qtb_mb_cut( $text, 240 ) ) ) );
+	}
+	$res = qtb_ai_comment_rules( $p, $ws, null !== $ti ? $ws['topics'][ $ti ] : null, $text );
+	if ( is_wp_error( $res ) ) {
+		$res->add_data( array( 'status' => 400 ) );
+		return $res;
+	}
+	return array( 'reply' => (string) ( $res['reply'] ?? '' ), 'rules' => array_values( (array) ( $res['rules'] ?? array() ) ) );
+}
+
+/**
+ * Evidence of a keyword (its top 10 and shared URLs).
+ */
+function qtb_rest_ws_evidence( $req ) {
+	$p = qtb_rest_project( $req );
+	if ( is_wp_error( $p ) ) {
+		return $p;
+	}
+	$res = qtb_ws_evidence( $p, (int) $req['tid'], (int) $req['kw'] );
+	if ( is_wp_error( $res ) ) {
+		$res->add_data( array( 'status' => 404 ) );
+	}
+	return $res;
+}
+
+/**
+ * Finalize the workshop into the research (the pipeline continues from «structure»).
+ */
+function qtb_rest_ws_finalize( $req ) {
+	$p = qtb_rest_project( $req );
+	if ( is_wp_error( $p ) ) {
+		return $p;
+	}
+	$res = qtb_ws_finalize( $p, ! empty( $req['include_ready'] ) );
+	if ( is_wp_error( $res ) ) {
+		$res->add_data( array( 'status' => 400 ) );
+		return $res;
+	}
+	$res['status'] = qtb_job_status( qtb_pipeline_tick( $p['id'], 15 ) );
+	return $res;
+}

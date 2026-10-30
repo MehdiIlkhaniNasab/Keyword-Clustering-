@@ -225,6 +225,13 @@ function qtb_can() {
 }
 
 /**
+ * Can the current user review clusters in the workshop (manager or SEO team reviewer)?
+ */
+function qtb_can_review() {
+	return qtb_can() || current_user_can( QTB_CAP_REVIEW );
+}
+
+/**
  * Inline SVG icon set (stroke icons, 24px grid).
  */
 function qtb_icon( $name, $size = 18 ) {

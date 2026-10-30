@@ -19,7 +19,7 @@ defined( 'ABSPATH' ) || exit;
  * economy: the head of every group (with volume), a second member of big groups
  *          (the one least similar to the head, to test whether the group is one page),
  *          and every other keyword with ≥ 1000 searches.
- * full:    every keyword with ≥ 10 searches, by volume.
+ * full:    every keyword, by volume.
  *
  * @return int[] keyword indices, most valuable first, capped.
  */
@@ -27,9 +27,7 @@ function qtb_serp_plan( $keywords, $groups, $mode, $cap ) {
 	$pick = array();
 	if ( 'full' === $mode ) {
 		foreach ( $keywords as $kw ) {
-			if ( $kw['v'] >= 10 ) {
-				$pick[ $kw['i'] ] = $kw['v'];
-			}
+			$pick[ $kw['i'] ] = $kw['v'];
 		}
 	} else {
 		foreach ( $groups as $g ) {
@@ -137,10 +135,10 @@ function qtb_serp_cluster( $keywords, $groups, $serps, $need ) {
 			$freq[ $u ] = ( $freq[ $u ] ?? 0 ) + 1;
 		}
 	}
-	$hub_at = max( 6, (int) ceil( count( $urls ) * 0.08 ) );
+	$hub_at = max( 6, (int) ceil( count( $urls ) * 0.15 ) );
 	foreach ( $urls as $i => $list ) {
 		$urls[ $i ] = array_values( array_filter( $list, function ( $u ) use ( $freq, $hub_at ) {
-			return $freq[ $u ] < $hub_at;
+			return ! qtb_is_hub_url( $u, $freq[ $u ], $hub_at );
 		} ) );
 	}
 	$overlap = function ( $a, $b ) use ( $urls ) {
@@ -264,6 +262,19 @@ function qtb_serp_cluster( $keywords, $groups, $serps, $need ) {
 }
 
 /**
+ * A «hub» URL says nothing about intent: a site's home page or search page that
+ * ranks for everything. A category page shared by many keywords of one topic is
+ * exactly the signal we want, so only home / search pages can be hubs.
+ */
+function qtb_is_hub_url( $norm_url, $freq, $hub_at ) {
+	if ( $freq < $hub_at ) {
+		return false;
+	}
+	$path = (string) substr( $norm_url, (int) strpos( $norm_url, '/' ) );
+	return '/' === $path || '' === $path || (bool) preg_match( '#^/(search|s|q|jostojo|جستجو)(/|$)#u', $path );
+}
+
+/**
  * Position weight (top results count more).
  */
 function qtb_pos_weight( $p ) {
@@ -330,7 +341,7 @@ function qtb_serp_metrics( $serp, $head_kw, $own_domain ) {
 	} else {
 		$intent = 'm';
 	}
-	$page = 'i' === $intent ? 'blog' : ( ( $share['product'] ?? 0 ) > ( ( $share['category'] ?? 0 ) + ( $share['marketplace'] ?? 0 ) ) ? 'product' : 'category' );
+	$page = 'i' === $intent ? 'article' : ( ( $share['product'] ?? 0 ) > ( ( $share['category'] ?? 0 ) + ( $share['marketplace'] ?? 0 ) ) ? 'product' : 'archive' );
 	$n    = max( 1, count( (array) ( $serp['organic'] ?? array() ) ) );
 	$diff = 12 + 6 * $strong + 2 * $market + 2.5 * $exact + ( $own[0] && $own[0] <= 3 ? -10 : 0 );
 	return array(
@@ -351,4 +362,204 @@ function qtb_serp_metrics( $serp, $head_kw, $own_domain ) {
 			return $o['title'];
 		}, (array) ( $serp['organic'] ?? array() ) ), 0, 10 ),
 	);
+}
+
+/**
+ * Keyword-level SERP clustering (every keyword has its own top 10).
+ *
+ * Keywords are taken by volume; each one joins the cluster whose head shares
+ * at least $need of its top-10 URLs AND whose biggest members share at least
+ * $need − 1 (no chains of «A≈B, B≈C» pulling A and C together). Otherwise it
+ * starts a cluster. Keywords without a SERP join by meaning only (low confidence).
+ *
+ * Every keyword gets: conf (high | mid | low), shared (URLs with the head),
+ * alt (the runner-up cluster head and its shared URLs) and why (serp | lexical).
+ *
+ * @param array $keywords Annotated keywords.
+ * @param int[] $members  Keyword indices to cluster.
+ * @param array $serps    keyword index → SERP.
+ * @param int   $need     Shared URLs for «same page».
+ * @param array $seed     Optional fixed clusters [[kw indices]] (approved earlier): new keywords may join them.
+ * @return array groups [{kws, head, core, vol, checked, meta: [i => {conf, shared, alt, alt_shared, why}], seed?}]
+ */
+function qtb_serp_cluster_kw( $keywords, $members, $serps, $need, $seed = array() ) {
+	$need = max( 2, min( 7, (int) $need ) );
+	$urls = array();
+	$freq = array();
+	foreach ( $serps as $i => $s ) {
+		$list = array();
+		foreach ( (array) ( $s['organic'] ?? array() ) as $o ) {
+			$u = qtb_norm_url( $o['url'] );
+			if ( '' !== $u && ! isset( $list[ $u ] ) ) {
+				$list[ $u ] = qtb_pos_weight( $o['p'] );
+			}
+		}
+		$urls[ $i ] = $list;
+		foreach ( $list as $u => $w ) {
+			$freq[ $u ] = ( $freq[ $u ] ?? 0 ) + 1;
+		}
+	}
+	$hub_at = max( 6, (int) ceil( count( $urls ) * 0.15 ) );
+	foreach ( $urls as $i => $list ) {
+		$urls[ $i ] = array_filter( $list, function ( $u ) use ( $freq, $hub_at ) {
+			return ! qtb_is_hub_url( $u, $freq[ $u ], $hub_at );
+		}, ARRAY_FILTER_USE_KEY );
+	}
+	$shared = function ( $a, $b ) use ( $urls ) {
+		if ( ! isset( $urls[ $a ], $urls[ $b ] ) ) {
+			return -1;
+		}
+		return count( array_intersect_key( $urls[ $a ], $urls[ $b ] ) );
+	};
+	$weighted = function ( $a, $b ) use ( $urls ) {
+		$w = 0;
+		foreach ( array_intersect_key( $urls[ $a ], $urls[ $b ] ) as $u => $x ) {
+			$w += $x * $urls[ $b ][ $u ];
+		}
+		return $w;
+	};
+
+	$clusters = array(); // [{head, kws[], meta[]}]
+	$index    = array(); // url → cluster ids.
+	$add_url  = function ( $ci, $i ) use ( &$index, $urls ) {
+		foreach ( array_keys( $urls[ $i ] ?? array() ) as $u ) {
+			$index[ $u ][ $ci ] = true;
+		}
+	};
+	foreach ( (array) $seed as $set ) {
+		$set = array_values( array_filter( (array) $set, function ( $i ) use ( $keywords ) {
+			return isset( $keywords[ $i ] );
+		} ) );
+		if ( ! $set ) {
+			continue;
+		}
+		$ci              = count( $clusters );
+		$clusters[ $ci ] = array( 'head' => $set[0], 'kws' => $set, 'meta' => array(), 'seed' => true );
+		foreach ( $set as $i ) {
+			$add_url( $ci, $i );
+		}
+	}
+	$order = array_values( array_filter( (array) $members, function ( $i ) use ( $keywords ) {
+		return isset( $keywords[ $i ] );
+	} ) );
+	usort( $order, function ( $a, $b ) use ( $keywords ) {
+		return $keywords[ $b ]['v'] <=> $keywords[ $a ]['v'];
+	} );
+	$no_serp = array();
+	foreach ( $order as $i ) {
+		if ( empty( $urls[ $i ] ) ) {
+			$no_serp[] = $i;
+			continue;
+		}
+		$cand = array();
+		foreach ( array_keys( $urls[ $i ] ) as $u ) {
+			foreach ( array_keys( $index[ $u ] ?? array() ) as $ci ) {
+				$cand[ $ci ] = true;
+			}
+		}
+		$best = null;
+		$alt  = null;
+		foreach ( array_keys( $cand ) as $ci ) {
+			$c  = $clusters[ $ci ];
+			$sh = $shared( $i, $c['head'] );
+			if ( $sh < 0 ) {
+				// Seeded head without a SERP: use its best member.
+				$sh = 0;
+				foreach ( $c['kws'] as $m ) {
+					$sh = max( $sh, $shared( $i, $m ) );
+				}
+			}
+			$ok = $sh >= $need;
+			if ( $ok ) {
+				foreach ( array_slice( $c['kws'], 1, 3 ) as $m ) {
+					$x = $shared( $i, $m );
+					if ( $x >= 0 && $x < $need - 1 ) {
+						$ok = false;
+						break;
+					}
+				}
+			}
+			$rank = array( $ok ? 1 : 0, $sh, isset( $urls[ $c['head'] ] ) ? $weighted( $i, $c['head'] ) : 0 );
+			if ( null === $best || $rank > $best[1] ) {
+				$alt  = $best;
+				$best = array( $ci, $rank );
+			} elseif ( null === $alt || $rank > $alt[1] ) {
+				$alt = array( $ci, $rank );
+			}
+		}
+		if ( $best && 1 === $best[1][0] ) {
+			$ci                         = $best[0];
+			$clusters[ $ci ]['kws'][]   = $i;
+			$sh                         = $best[1][1];
+			$clusters[ $ci ]['meta'][ $i ] = array(
+				'conf'       => $sh >= $need + 2 ? 'high' : 'mid',
+				'shared'     => $sh,
+				'alt'        => $alt ? $clusters[ $alt[0] ]['head'] : null,
+				'alt_shared' => $alt ? $alt[1][1] : 0,
+				'why'        => 'serp',
+			);
+			$add_url( $ci, $i );
+		} else {
+			$ci              = count( $clusters );
+			$clusters[ $ci ] = array(
+				'head' => $i,
+				'kws'  => array( $i ),
+				'meta' => array( $i => array( 'conf' => $best && $best[1][1] >= $need - 1 ? 'mid' : 'high', 'shared' => 10, 'alt' => $best ? $clusters[ $best[0] ]['head'] : null, 'alt_shared' => $best ? $best[1][1] : 0, 'why' => 'serp' ) ),
+			);
+			$add_url( $ci, $i );
+		}
+	}
+	// Keywords without a SERP: by meaning (all words of a cluster head, no intent-shifting extra word).
+	$shift = qtb_shift_words( $keywords );
+	foreach ( $no_serp as $i ) {
+		$core = $keywords[ $i ]['core'];
+		$best = null;
+		foreach ( $clusters as $ci => $c ) {
+			$hc = $keywords[ $c['head'] ]['core'];
+			if ( array_diff( $hc, $core ) || array_intersect_key( array_flip( array_diff( $core, $hc ) ), $shift ) ) {
+				continue;
+			}
+			$sim = qtb_jaccard( $core, $hc );
+			if ( null === $best || $sim > $best[1] ) {
+				$best = array( $ci, $sim );
+			}
+		}
+		if ( $best && $best[1] >= 0.5 ) {
+			$clusters[ $best[0] ]['kws'][]      = $i;
+			$clusters[ $best[0] ]['meta'][ $i ] = array( 'conf' => 'low', 'shared' => 0, 'alt' => null, 'alt_shared' => 0, 'why' => 'lexical' );
+		} else {
+			$clusters[] = array( 'head' => $i, 'kws' => array( $i ), 'meta' => array( $i => array( 'conf' => 'low', 'shared' => 0, 'alt' => null, 'alt_shared' => 0, 'why' => 'lexical' ) ) );
+		}
+	}
+	$out = array();
+	foreach ( $clusters as $c ) {
+		$g            = qtb_group_make( $keywords, $c['kws'] );
+		$g['meta']    = $c['meta'];
+		$g['seed']    = ! empty( $c['seed'] );
+		$g['checked'] = count( array_filter( $c['kws'], function ( $i ) use ( $urls ) {
+			return ! empty( $urls[ $i ] );
+		} ) );
+		$out[]        = $g;
+	}
+	return $out;
+}
+
+/**
+ * URLs two keywords share in their top 10 (for the evidence panel).
+ *
+ * @return array [{url, pa, pb}]
+ */
+function qtb_serp_shared_urls( $serp_a, $serp_b ) {
+	$pos = array();
+	foreach ( (array) ( $serp_b['organic'] ?? array() ) as $o ) {
+		$pos[ qtb_norm_url( $o['url'] ) ] = (int) $o['p'];
+	}
+	$out = array();
+	foreach ( (array) ( $serp_a['organic'] ?? array() ) as $o ) {
+		$u = qtb_norm_url( $o['url'] );
+		if ( isset( $pos[ $u ] ) ) {
+			$out[] = array( 'url' => $o['url'], 'pa' => (int) $o['p'], 'pb' => $pos[ $u ] );
+		}
+	}
+	return $out;
 }

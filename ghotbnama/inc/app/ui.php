@@ -40,9 +40,11 @@ function qtb_form_fields( $action, $extra = array() ) {
 /**
  * Page type chip.
  */
-function qtb_chip_page( $page ) {
-	$t = qtb_page_types()[ $page ] ?? array( $page );
-	return '<span class="qtb-chip is-' . esc_attr( $page ) . '">' . esc_html( $t[0] ) . '</span>';
+function qtb_chip_page( $page, $c = null ) {
+	$page  = qtb_page_norm( $page );
+	$label = $c ? qtb_page_label( $c ) : ( qtb_page_types()[ $page ][0] ?? $page );
+	$title = $c && ! empty( $c['page_reason'] ) ? ' title="' . esc_attr( $c['page_reason'] ) . '"' : '';
+	return '<span class="qtb-chip is-' . esc_attr( $page ) . '"' . $title . '>' . esc_html( $label ) . '</span>';
 }
 
 /**

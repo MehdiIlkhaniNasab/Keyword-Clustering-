@@ -55,8 +55,50 @@ function qtb_install() {
 		PRIMARY KEY  (id),
 		UNIQUE KEY kw_market (kw_hash,market)
 	) $c;" );
+	qtb_migrate( (string) get_option( 'qtb_db_version' ) );
+	if ( ! get_role( 'qtb_reviewer' ) ) {
+		add_role( 'qtb_reviewer', 'بازبین سئو (قطب‌نما)', array( 'read' => true, QTB_CAP_REVIEW => true ) );
+	}
 	update_option( 'qtb_db_version', QTB_DB_VERSION, false );
 	delete_option( 'qtb_rewrite_version' );
+}
+
+/**
+ * Data migrations between versions.
+ */
+function qtb_migrate( $from ) {
+	global $wpdb;
+	if ( '' === $from || version_compare( $from, '2', '>=' ) ) {
+		return;
+	}
+	// v2: four page types (landing / archive / product / article).
+	$ids = $wpdb->get_col( 'SELECT id FROM ' . qtb_table( 'projects' ) ); // phpcs:ignore
+	foreach ( (array) $ids as $pid ) {
+		$clusters = qtb_data_get( (int) $pid, 'clusters', array() );
+		if ( ! $clusters ) {
+			continue;
+		}
+		foreach ( $clusters as &$c ) {
+			$old       = (string) ( $c['page'] ?? '' );
+			$c['page'] = qtb_page_norm( $old );
+			$c['archive'] = 'archive' === $c['page'] ? 'category' : '';
+			if ( isset( $c['section'] ) && 'لندینگ‌های اصلی' === $c['section'] ) {
+				$c['section'] = 'صفحات اصلی';
+			}
+		}
+		unset( $c );
+		if ( isset( $clusters[0]['pillar_name'] ) ) {
+			$asm = qtb_pillars_assemble( $clusters );
+			qtb_data_put( (int) $pid, 'clusters', $asm['clusters'] );
+			$pillars = qtb_data_get( (int) $pid, 'pillars', array() );
+			foreach ( $asm['pillars'] as $i => $p ) {
+				$asm['pillars'][ $i ] = array_merge( $pillars[ $i ] ?? array(), $p );
+			}
+			qtb_data_put( (int) $pid, 'pillars', $asm['pillars'] );
+		} else {
+			qtb_data_put( (int) $pid, 'clusters', $clusters );
+		}
+	}
 }
 
 /**
@@ -69,6 +111,11 @@ function qtb_deactivate() {
 add_action( 'plugins_loaded', function () {
 	if ( get_option( 'qtb_db_version' ) !== QTB_DB_VERSION ) {
 		qtb_install();
+	}
+} );
+add_action( 'init', function () {
+	if ( ! get_role( 'qtb_reviewer' ) ) {
+		add_role( 'qtb_reviewer', 'بازبین سئو (قطب‌نما)', array( 'read' => true, QTB_CAP_REVIEW => true ) );
 	}
 } );
 

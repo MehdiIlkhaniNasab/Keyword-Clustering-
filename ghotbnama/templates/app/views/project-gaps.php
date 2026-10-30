@@ -15,7 +15,7 @@ $quick  = array_filter( $sorted, function ( $c ) {
 	return ! empty( $c['quick_win'] );
 } );
 $new_l  = array_filter( $sorted, function ( $c ) {
-	return 'new' === $c['coverage'] && 'blog' !== $c['page'];
+	return 'new' === $c['coverage'] && 'article' !== $c['page'];
 } );
 $opt    = array_filter( $sorted, function ( $c ) {
 	return 'optimize' === $c['coverage'] && empty( $c['quick_win'] );
@@ -35,7 +35,7 @@ $table  = function ( $list, $limit = 25 ) use ( $R ) {
 			<tr>
 				<td><b><?php echo esc_html( $c['name'] ); ?></b><br><span class="qtb-muted qtb-small"><?php echo esc_html( qtb_cluster_action( $c ) ); ?></span></td>
 				<td><?php echo esc_html( $R['pillars'][ $c['pillar'] ]['name'] ?? '' ); ?></td>
-				<td><?php echo qtb_chip_page( $c['page'] ); // phpcs:ignore ?></td>
+				<td><?php echo qtb_chip_page( $c['page'], $c ); // phpcs:ignore ?></td>
 				<td class="num"><?php echo esc_html( qtb_num( $c['vol'] ) ); ?></td>
 				<td class="num"><?php echo qtb_score_badge( $c['score'] ); // phpcs:ignore ?></td>
 				<td class="num"><?php echo esc_html( qtb_num( $c['diff'] ) ); ?></td>
@@ -89,7 +89,7 @@ foreach ( array_slice( $gaps, 0, 60 ) as $c ) :
 	?>
 	<details class="qtb-panel">
 		<summary>
-			<?php echo qtb_chip_page( $c['page'] ); // phpcs:ignore ?>
+			<?php echo qtb_chip_page( $c['page'], $c ); // phpcs:ignore ?>
 			<span><?php echo esc_html( $c['name'] ); ?></span>
 			<span class="qtb-muted qtb-small"><?php echo esc_html( qtb_num( $c['vol'] ) ); ?> جستجو</span>
 			<?php echo qtb_score_badge( $c['score'] ); // phpcs:ignore ?>

@@ -10,6 +10,9 @@
 defined( 'ABSPATH' ) || exit;
 
 $tabs   = qtb_project_tabs();
+if ( ! qtb_can() ) {
+	$tabs = array_intersect_key( $tabs, array( 'workshop' => 1 ) );
+}
 $result = 'settings' === $tab ? array() : qtb_result( $project );
 $counts = array(
 	'clusters' => count( $result['clusters'] ?? array() ),
@@ -27,7 +30,7 @@ $counts = array(
 			<?php endif; ?>
 		</p>
 	</div>
-	<div class="qtb-actions">
+	<div class="qtb-actions" <?php echo qtb_can() ? '' : 'hidden'; ?>>
 		<?php if ( ! empty( $result['clusters'] ) ) : ?>
 			<a class="qtb-btn" href="<?php echo esc_url( add_query_arg( '_wpnonce', wp_create_nonce( 'wp_rest' ), rest_url( 'ghotbnama/v1/download/' . $project['id'] . '/research' ) ) ); ?>"><?php echo qtb_icon( 'download', 16 ); // phpcs:ignore ?> کیورد ریسرچ (اکسل)</a>
 		<?php endif; ?>
@@ -42,7 +45,7 @@ $counts = array(
 <?php
 if ( 'settings' === $tab ) {
 	qtb_view( 'project-form', array( 'project' => $project ) );
-} elseif ( 'overview' !== $tab && 'export' !== $tab && empty( $result['clusters'] ) ) {
+} elseif ( ! in_array( $tab, array( 'overview', 'export', 'workshop' ), true ) && empty( $result['clusters'] ) ) {
 	?>
 	<div class="qtb-empty">
 		<?php echo qtb_icon( 'compass', 40 ); // phpcs:ignore ?>

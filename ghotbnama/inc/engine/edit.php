@@ -83,9 +83,14 @@ function qtb_edit_apply( $project, $e ) {
 			if ( null === $ci ) {
 				return new WP_Error( 'qtb_edit', 'کلاستر پیدا نشد.' );
 			}
-			if ( isset( $e['page'] ) && isset( qtb_page_types()[ $e['page'] ] ) ) {
-				$clusters[ $ci ]['page']        = $e['page'];
-				$clusters[ $ci ]['locked_page'] = 1;
+			if ( isset( $e['page'] ) ) {
+				$pt = qtb_page_value_parse( (string) $e['page'] );
+				if ( $pt ) {
+					$clusters[ $ci ]['page']        = $pt[0];
+					$clusters[ $ci ]['archive']     = $pt[1];
+					$clusters[ $ci ]['locked_page'] = 1;
+					$clusters[ $ci ]['page_reason'] = 'انتخاب دستی';
+				}
 			}
 			if ( isset( $e['section'] ) && '' !== trim( (string) $e['section'] ) ) {
 				$clusters[ $ci ]['section']        = sanitize_text_field( (string) $e['section'] );

@@ -42,9 +42,15 @@ $link     = function ( $key, $url, $icon, $label ) use ( $nav ) {
 					<i class="qtb-dot <?php echo esc_attr( qtb_status_class( $p['status'] ) ); ?>"></i><span><?php echo esc_html( $p['name'] ); ?></span>
 				</a>
 			<?php endforeach; ?>
+			<?php if ( qtb_can() ) : ?>
 			<a class="qtb-nav-add <?php echo 'new' === $nav ? 'is-active' : ''; ?>" href="<?php echo esc_url( qtb_url( 'new' ) ); ?>"><?php echo qtb_icon( 'plus', 16 ); // phpcs:ignore ?><span>پروژه جدید</span></a>
+			<?php endif; ?>
 			<p class="qtb-nav-h">ابزار</p>
-			<?php $link( 'settings', qtb_url( 'settings' ), 'settings', 'تنظیمات و اتصال‌ها' ); ?>
+			<?php
+			if ( qtb_can() ) {
+				$link( 'settings', qtb_url( 'settings' ), 'settings', 'تنظیمات و اتصال‌ها' );
+			}
+			?>
 			<?php $link( 'guide', qtb_url( 'guide' ), 'help', 'راهنما و روش کار' ); ?>
 			<?php if ( defined( 'SAP_VERSION' ) && function_exists( 'sap_url' ) ) : ?>
 				<a href="<?php echo esc_url( sap_url() ); ?>"><?php echo qtb_icon( 'target', 18 ); // phpcs:ignore ?><span>سُکان (اکشن پلن)</span></a>

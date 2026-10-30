@@ -133,7 +133,7 @@ $pmax = max( 1, max( array_column( $R['pillars'], 'vol' ) ?: array( 1 ) ) );
 				<tr>
 					<td><b><?php echo esc_html( $c['name'] ); ?></b> <span class="qtb-muted qtb-small">(<?php echo esc_html( qtb_num( count( $c['kws'] ) ) ); ?> کلمه)</span></td>
 					<td><?php echo esc_html( $R['pillars'][ $c['pillar'] ]['name'] ?? '' ); ?></td>
-					<td><?php echo qtb_chip_page( $c['page'] ); // phpcs:ignore ?></td>
+					<td><?php echo qtb_chip_page( $c['page'], $c ); // phpcs:ignore ?></td>
 					<td class="num"><?php echo esc_html( qtb_num( $c['vol'] ) ); ?></td>
 					<td class="num"><?php echo qtb_score_badge( $c['score'] ); // phpcs:ignore ?></td>
 					<td><?php echo qtb_chip_prio( $c['priority'] ); // phpcs:ignore ?><?php echo ! empty( $c['quick_win'] ) ? ' <span class="qtb-chip is-quick">برد سریع</span>' : ''; ?></td>

@@ -22,7 +22,7 @@ foreach ( $R['clusters'] as $c ) {
 		}
 		$dom[ $d ]['n']++;
 		$dom[ $d ]['vol'] += $c['vol'];
-		$dom[ $d ][ 'blog' === $c['page'] ? 'blog' : 'land' ]++;
+		$dom[ $d ][ 'article' === $c['page'] ? 'blog' : 'land' ]++;
 		if ( count( $dom[ $d ]['ex'] ) < 3 ) {
 			$dom[ $d ]['ex'][] = $c['name'];
 		}

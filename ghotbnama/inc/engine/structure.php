@@ -17,18 +17,6 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Page types (colors match the Delna research sheets).
- */
-function qtb_page_types() {
-	return array(
-		'main'     => array( 'لندینگ اصلی', 'D9EAD3' ),
-		'category' => array( 'لندینگ دسته', 'C9DAF8' ),
-		'product'  => array( 'صفحه محصول', 'C9DAF8' ),
-		'blog'     => array( 'مقاله بلاگ', 'FFF2CC' ),
-	);
-}
-
-/**
  * Intent labels.
  */
 function qtb_intents() {
@@ -101,6 +89,7 @@ function qtb_clusters_build( $keywords, $groups, $serps, $own_domain ) {
 			'core'    => $g['core'],
 			'checked' => (int) ( $g['checked'] ?? 0 ),
 			'serp'    => null,
+			'meta'    => (array) ( $g['meta'] ?? array() ),
 		);
 		foreach ( $g['kws'] as $m ) {
 			if ( isset( $serps[ $m ] ) && ! empty( $serps[ $m ]['organic'] ) ) {
@@ -113,9 +102,9 @@ function qtb_clusters_build( $keywords, $groups, $serps, $own_domain ) {
 		if ( $c['serp'] ) {
 			$c['intent'] = 'n' === $lex ? 'n' : $c['serp']['intent'];
 			$c['page']   = $c['serp']['page'];
-			// SERP says «mixed» but the queries are clearly informational: a blog post wins.
+			// SERP says «mixed» but the queries are clearly informational: an article wins.
 			if ( 'm' === $c['intent'] && 'i' === $lex ) {
-				$c['page'] = 'blog';
+				$c['page'] = 'article';
 			}
 		} else {
 			$c['intent'] = $lex;
@@ -132,7 +121,7 @@ function qtb_clusters_build( $keywords, $groups, $serps, $own_domain ) {
 function qtb_page_from_intent( $intent, $keywords, $g ) {
 	switch ( $intent ) {
 		case 'i':
-			return 'blog';
+			return 'article';
 		case 'c':
 			$list = false;
 			foreach ( $g['kws'] as $m ) {
@@ -141,12 +130,10 @@ function qtb_page_from_intent( $intent, $keywords, $g ) {
 					break;
 				}
 			}
-			return $list ? 'category' : 'blog';
-		case 'n':
-			return 'main';
+			return $list ? 'archive' : 'article';
 		default:
-			// Product vs category needs the SERP; a landing is the safe default.
-			return 'category';
+			// The final type is decided with the store data (qtb_page_decide).
+			return 'archive';
 	}
 }
 
@@ -163,12 +150,14 @@ function qtb_attach_orphans( $keywords, $clusters ) {
 			}
 		}
 	}
-	$blog = function ( $c ) {
-		return 'blog' === $c['page'];
+	$blog  = function ( $c ) {
+		return 'article' === $c['page'];
 	};
-	$drop = array();
+	$shift = qtb_shift_words( $keywords );
+	$drop  = array();
 	foreach ( $clusters as $ci => $c ) {
-		if ( count( $c['kws'] ) > 1 || $c['vol'] >= 50 || $c['checked'] ) {
+		// Only learning queries are folded by words; landings stay apart unless the SERP joins them.
+		if ( count( $c['kws'] ) > 1 || $c['vol'] >= 50 || $c['checked'] || 'article' !== $c['page'] ) {
 			continue;
 		}
 		$best = null;
@@ -178,8 +167,9 @@ function qtb_attach_orphans( $keywords, $clusters ) {
 					continue;
 				}
 				$sim = qtb_jaccard( $c['core'], $clusters[ $bi ]['core'] );
-				// Must contain the whole parent topic (no jumping to a sibling product).
-				if ( array_diff( $clusters[ $bi ]['core'], $c['core'] ) ) {
+				// Must contain the whole parent topic (no jumping to a sibling product),
+				// and add no word that changes the intent (brand, city, service, comparison).
+				if ( array_diff( $clusters[ $bi ]['core'], $c['core'] ) || array_intersect_key( array_flip( array_diff( $c['core'], $clusters[ $bi ]['core'] ) ), $shift ) ) {
 					continue;
 				}
 				if ( $sim >= 0.34 && ( null === $best || $sim > $best[1] ) ) {
@@ -298,11 +288,17 @@ function qtb_pillars_free( $keywords, $clusters ) {
  * Section label of a cluster inside its pillar (no AI).
  */
 function qtb_section_free( $keywords, $c, $pillar_key ) {
-	if ( 'main' === $c['page'] || ( in_array( $c['page'], array( 'category', 'product' ), true ) && $c['core'] === array( $pillar_key ) ) ) {
-		return 'لندینگ‌های اصلی';
+	if ( 'article' !== $c['page'] && $c['core'] === array( $pillar_key ) ) {
+		return 'صفحات اصلی';
 	}
-	if ( 'blog' !== $c['page'] ) {
-		return 'انواع و مدل‌ها';
+	switch ( $c['page'] ) {
+		case 'landing':
+			return 'لندینگ‌ها';
+		case 'product':
+			return 'محصولات';
+		case 'archive':
+			$l = array( 'brand' => 'برندها', 'attribute' => 'ویژگی‌ها و فیلترها', 'tag' => 'برچسب‌ها' );
+			return $l[ $c['archive'] ?? 'category' ] ?? 'دسته‌ها و انواع';
 	}
 	$text = '';
 	foreach ( array_slice( $c['kws'], 0, 5 ) as $m ) {
@@ -320,7 +316,7 @@ function qtb_section_free( $keywords, $c, $pillar_key ) {
 			return $label;
 		}
 	}
-	return 'بلاگ';
+	return 'مقالات';
 }
 
 /**
@@ -355,18 +351,9 @@ function qtb_structure_build( $keywords, $clusters, $ai = array() ) {
 		} else {
 			$c['pillar_name'] = '*' === $k ? 'سایر کلمات' : ( $names[ $k ] ?? qtb_token_display( $keywords, $c, $k ) );
 		}
-		if ( $a && isset( qtb_page_types()[ $a['page'] ?? '' ] ) && empty( $c['locked_page'] ) ) {
-			// The SERP outranks the model's guess between landing and blog.
-			if ( ! $c['serp'] || ( 'blog' === $a['page'] ) === ( 'blog' === $c['page'] ) ) {
-				$c['page'] = $a['page'];
-			}
-		}
+		// The page type is decided from the SERP and the store (qtb_page_decide), not here.
 		if ( empty( $c['locked_section'] ) ) {
 			$c['section'] = $a && '' !== (string) ( $a['section'] ?? '' ) ? qtb_display( $a['section'] ) : qtb_section_free( $keywords, $c, $k );
-		}
-		// The pillar's own landing is the main landing (green in the research).
-		if ( empty( $c['locked_page'] ) && 'blog' !== $c['page'] && 'لندینگ‌های اصلی' === $c['section'] ) {
-			$c['page'] = 'main';
 		}
 	}
 	unset( $c );
@@ -387,16 +374,16 @@ function qtb_pillars_assemble( $clusters ) {
 		$pillars[ $pn ]['clusters'][] = $c['id'];
 		$sec = $c['section'];
 		if ( ! isset( $pillars[ $pn ]['sections'][ $sec ] ) ) {
-			$pillars[ $pn ]['sections'][ $sec ] = array( 'name' => $sec, 'kind' => 'blog' === $c['page'] ? 'blog' : ( 'main' === $c['page'] || 'لندینگ‌های اصلی' === $sec ? 'main' : 'landing' ), 'clusters' => array(), 'vol' => 0 );
+			$pillars[ $pn ]['sections'][ $sec ] = array( 'name' => $sec, 'kind' => 'صفحات اصلی' === $sec ? 'main' : $c['page'], 'clusters' => array(), 'vol' => 0 );
 		}
 		$pillars[ $pn ]['sections'][ $sec ]['clusters'][] = $c['id'];
 		$pillars[ $pn ]['sections'][ $sec ]['vol']       += $c['vol'];
 	}
-	$rank = array( 'main' => 0, 'landing' => 1, 'blog' => 2 );
+	$rank = array( 'main' => 0, 'landing' => 1, 'archive' => 2, 'product' => 3, 'article' => 4 );
 	foreach ( $pillars as &$p ) {
 		$secs = array_values( $p['sections'] );
 		usort( $secs, function ( $a, $b ) use ( $rank ) {
-			return ( $rank[ $a['kind'] ] <=> $rank[ $b['kind'] ] ) ?: ( $b['vol'] <=> $a['vol'] );
+			return ( ( $rank[ $a['kind'] ] ?? 2 ) <=> ( $rank[ $b['kind'] ] ?? 2 ) ) ?: ( $b['vol'] <=> $a['vol'] );
 		} );
 		$p['sections'] = $secs;
 	}
@@ -445,17 +432,17 @@ function qtb_token_display( $keywords, $c, $token ) {
  * @return array|WP_Error {map: id → {pillar, section, page}, merge: [[id, id…]]}
  */
 function qtb_ai_structure_batch( $project, $batch, $known ) {
-	$types = array( 'main' => 'لندینگ اصلی یک دسته/محصول (صفحه دسته اصلی)', 'category' => 'لندینگ زیردسته/نوع', 'product' => 'صفحه محصول', 'blog' => 'مقاله بلاگ' );
+	$types = array( 'landing' => 'لندینگ (صفحه اختصاصی، خدمات، محلی)', 'archive' => 'آرشیو (دسته، برند، برچسب، ویژگی)', 'product' => 'صفحه محصول', 'article' => 'مقاله' );
 	$lines = array();
 	foreach ( $batch as $c ) {
 		$lines[] = sprintf( '%d | %s | %d | %s | %s', $c['id'], $c['name'], $c['vol'], $c['page'], implode( '، ', array_slice( $c['kws'], 1, 4 ) ) );
 	}
-	$system = 'تو مدیر ارشد سئو و معمار اطلاعات (Information Architecture) یک سایت فروشگاهی/خدماتی فارسی هستی. خوشه‌های کلمات کلیدی را در ساختار کیورد ریسرچ قرار می‌دهی: هر پیلار یک شیت (یک خط محصول یا موضوع اصلی مثل «پتوس» یا «گیاه آپارتمانی»)، هر بخش یک گروه ستون (مثل «لندینگ‌های اصلی»، «انواع پتوس»، «ویژگی و ظاهر»، «نگهداری»، «مشکلات و درمان»، «بلاگ»). هدف ساختار: فروش و بازگشت سرمایه؛ لندینگ‌های پولساز جدا و واضح، و مقاله‌ها پشتیبان همان لندینگ‌ها.';
+	$system = 'تو مدیر ارشد سئو و معمار اطلاعات (Information Architecture) یک سایت فروشگاهی/خدماتی فارسی هستی. خوشه‌های کلمات کلیدی را در ساختار کیورد ریسرچ قرار می‌دهی: هر پیلار یک شیت (یک خط محصول یا موضوع اصلی مثل «پتوس» یا «گیاه آپارتمانی»)، هر بخش یک گروه ستون (مثل «صفحات اصلی»، «انواع پتوس»، «برندها»، «ویژگی و ظاهر»، «نگهداری»، «مشکلات و درمان»). هدف ساختار: فروش و بازگشت سرمایه؛ صفحات پولساز جدا و واضح، و مقاله‌ها پشتیبان همان صفحات.';
 	$user   = "کسب‌وکار: {$project['name']} — " . ( $project['cfg']['niche'] ?: 'از روی کلمات حدس بزن' ) .
 		"\nپیلارهای موجود (اگر مناسب است همین نام‌ها را دوباره استفاده کن): " . ( $known ? implode( '، ', array_slice( $known, 0, 80 ) ) : '—' ) .
 		"\n\nنوع صفحه‌ها: " . wp_json_encode( $types, JSON_UNESCAPED_UNICODE ) .
 		"\n\nبرای هر خوشه (شناسه | کلمه اصلی | حجم | نوع صفحه فعلی | چند کلمه دیگر) بده: pillar (نام کوتاه پیلار، ۱ تا ۳ کلمه)، section (نام بخش در آن پیلار)، page (نوع صفحه درست).\n" .
-		"قوانین: اسم برند/محصول اصلی پیلار است نه صفت (پتوس آپارتمانی ← پیلار پتوس). خوشه‌ای که فقط نام همان پیلار است (مثل «پتوس»، «گل پتوس») page=main و section=«لندینگ‌های اصلی». انواع و مدل‌ها لندینگ category هستند. آموزش، نگهداری، علت و مشکلات blog هستند. نام بخش‌ها را در هر پیلار یکسان و کوتاه بنویس.\n" .
+		"قوانین: اسم برند/محصول اصلی پیلار است نه صفت (پتوس آپارتمانی ← پیلار پتوس). خوشه‌ای که فقط نام همان پیلار است (مثل «پتوس»، «گل پتوس») section=«صفحات اصلی». انواع و مدل‌ها archive هستند، برندها archive در بخش «برندها». آموزش، نگهداری، علت، مشکلات و «بهترین…» article هستند. نام بخش‌ها را در هر پیلار یکسان و کوتاه بنویس.\n" .
 		"اگر چند خوشه دقیقاً یک نیت جستجو و یک صفحه هستند (مترادف، املای دیگر، ترتیب دیگر کلمات) شناسه‌هایشان را در merge بیاور؛ در شک ادغام نکن.\n\nخوشه‌ها:\n" . implode( "\n", $lines );
 	$schema = array(
 		'type'                 => 'object',
@@ -525,7 +512,7 @@ function qtb_clusters_merge_sets( $keywords, $clusters, $sets ) {
 		}
 		// Do not merge a landing with a blog post.
 		$kinds = array_unique( array_map( function ( $id ) use ( $clusters, $by_id ) {
-			return 'blog' === $clusters[ $by_id[ $id ] ]['page'] ? 'b' : 'l';
+			return 'article' === $clusters[ $by_id[ $id ] ]['page'] ? 'b' : 'l';
 		}, $set ) );
 		if ( count( $kinds ) > 1 ) {
 			continue;

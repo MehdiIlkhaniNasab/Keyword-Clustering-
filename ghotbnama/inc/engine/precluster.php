@@ -7,9 +7,10 @@
  * 2. Soft words (خرید، قیمت، روش، علت…) and data-driven fillers (tokens that are
  *    optional in this list, e.g. «گل» in «گل پتوس» / «پتوس») are removed → the
  *    core of the query. Same core = same page.
- * 3. Long-tail queries join their parent: «نگهداری پتوس در زمستان» joins
- *    «نگهداری پتوس»; a commercial query with a rare extra word joins its parent,
- *    but a recurring facet («پتوس ابلق»، «پتوس حصیری») keeps its own landing.
+ * 3. Long-tail questions join their parent: «نگهداری پتوس در زمستان» joins
+ *    «نگهداری پتوس». A word that changes the intent — a brand, a city, a service
+ *    («تعویض»، «نصب») or a comparison («بهترین») — never joins lexically: only the
+ *    SERP can put «چسب کفش مشهد» or «بهترین چسب کفش» with «چسب کفش».
  *
  * The SERP stage later confirms, merges (synonyms) or splits these groups.
  *
@@ -17,6 +18,34 @@
  */
 
 defined( 'ABSPATH' ) || exit;
+
+/**
+ * Words that change the search intent: cities, services, comparisons and brands
+ * (brand words found by the AI triage, the project's brands and competitors).
+ *
+ * @return array word => true
+ */
+function qtb_shift_words( $keywords, $brands = array() ) {
+	$out = array();
+	foreach ( array( 'local', 'service', 'comparison' ) as $role ) {
+		foreach ( qtb_lexicon()[ $role ] as $w ) {
+			if ( false === strpos( $w, ' ' ) ) {
+				$out[ $w ] = true;
+			}
+		}
+	}
+	foreach ( $keywords as $kw ) {
+		foreach ( qtb_tokens( (string) ( $kw['brand_tok'] ?? '' ) ) as $t ) {
+			$out[ $t ] = true;
+		}
+	}
+	foreach ( (array) $brands as $b ) {
+		foreach ( qtb_tokens( $b ) as $t ) {
+			$out[ $t ] = true;
+		}
+	}
+	return $out;
+}
 
 /**
  * Union-find helpers.
@@ -181,9 +210,12 @@ function qtb_annotate( &$keywords ) {
  *
  * @return array clusters [{id, kws: int[], head: int, ck, core, vol}]
  */
-function qtb_precluster( $keywords ) {
+function qtb_precluster( $keywords, $opts = array() ) {
 	$n      = count( $keywords );
-	$parent = range( 0, max( 0, $n - 1 ) );
+	$parent = array();
+	foreach ( $keywords as $kw ) {
+		$parent[ $kw['i'] ] = $kw['i']; // Works on any subset of the keywords (a workshop topic).
+	}
 	$by_ck  = array();
 	$by_cmp = array();
 	foreach ( $keywords as $kw ) {
@@ -202,7 +234,7 @@ function qtb_precluster( $keywords ) {
 		}
 	}
 	$groups = qtb_groups_from_uf( $keywords, $parent );
-	return qtb_merge_longtail( $keywords, $groups );
+	return qtb_merge_longtail( $keywords, $groups, $opts );
 }
 
 /**
@@ -245,8 +277,12 @@ function qtb_group_make( $keywords, $members ) {
 /**
  * Join long-tail groups into their parent group (see file header).
  */
-function qtb_merge_longtail( $keywords, $groups ) {
-	$info = qtb_lex_set( 'informational' );
+function qtb_merge_longtail( $keywords, $groups, $opts = array() ) {
+	$info  = qtb_lex_set( 'informational' );
+	$shift = qtb_shift_words( $keywords, (array) ( $opts['brands'] ?? array() ) );
+	// Commercial long-tail («چسب کفش ورزشی») is a different product facet more often
+	// than not: it is never merged by words, only by the SERP or by the reviewer.
+	$commercial_tail = false;
 	// Facet frequency: in how many groups does a token appear?
 	$gdf = array();
 	foreach ( $groups as $g ) {
@@ -288,10 +324,13 @@ function qtb_merge_longtail( $keywords, $groups ) {
 					if ( ( $gdf[ $t ] ?? 0 ) >= 3 || isset( $info[ $t ] ) ) {
 						$rare = false;
 					}
+					if ( isset( $shift[ $t ] ) ) {
+						continue 2; // Brand / city / service / comparison: a different search.
+					}
 				}
 				// Informational parent: long-tail questions join unless they add a new topic word.
 				$ok = ( $p_info && ( $rare || 1 === count( $extra ) && ( $gdf[ $extra[0] ] ?? 0 ) < 6 ) && ! array_intersect( $extra, array_keys( $info ) ) )
-					|| ( ! $p_info && $rare && count( $p['core'] ) >= 2 && $g['vol'] <= max( 30, $p['vol'] * 0.15 ) );
+					|| ( $commercial_tail && ! $p_info && $rare && count( $p['core'] ) >= 2 && $g['vol'] <= max( 30, $p['vol'] * 0.15 ) );
 				if ( $ok && ( null === $best || count( $sub ) > $best[1] || ( count( $sub ) === $best[1] && $p['vol'] > $groups[ $best[0] ]['vol'] ) ) ) {
 					$best = array( $pi, count( $sub ) );
 				}

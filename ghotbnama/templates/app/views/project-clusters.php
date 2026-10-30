@@ -72,9 +72,12 @@ $card = function ( $c ) use ( $kws, $R ) {
 			<?php echo $sv ? '<span class="qtb-chip is-serp" title="سختی ' . esc_attr( qtb_num( $c['diff'] ) ) . '">گوگل ✓' . ( $sv['own_pos'] ? ' · جایگاه ' . esc_html( qtb_num( $sv['own_pos'] ) ) : '' ) . '</span>' : ''; ?>
 			<?php echo ! empty( $c['issues'] ) ? '<span class="qtb-chip is-warn" title="' . esc_attr( implode( ' | ', array_column( $c['issues'], 'text' ) ) ) . '">هشدار</span>' : ''; ?>
 			<select data-qtb-page="<?php echo esc_attr( $c['id'] ); ?>" style="min-height:24px;padding:0 8px 0 24px;width:auto;font-size:11.5px;border-radius:99px;background-position:left 7px center">
-				<?php qtb_options( array_map( function ( $t ) { return $t[0]; }, qtb_page_types() ), $c['page'] ); ?>
+				<?php qtb_options( qtb_page_options(), qtb_page_value( $c ) ); ?>
 			</select>
 		</div>
+		<?php if ( ! empty( $c['page_reason'] ) ) : ?>
+			<div class="qtb-cl-why"><?php echo esc_html( $c['page_reason'] ); ?></div>
+		<?php endif; ?>
 		<?php if ( $c['target'] ) : ?>
 			<div class="qtb-cl-target">صفحه هدف: <?php echo qtb_link( $c['target']['url'], 40 ); // phpcs:ignore ?></div>
 		<?php endif; ?>

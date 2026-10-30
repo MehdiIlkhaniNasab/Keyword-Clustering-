@@ -71,7 +71,7 @@ function qtb_ai_gap_batch( $project, $batch, $purpose = 'analysis' ) {
 	$types  = qtb_page_types();
 	$blocks = array();
 	foreach ( $batch as $c ) {
-		$b = sprintf( "### شناسه %d — «%s»\nنوع صفحه: %s | نیت: %s\nکلمات کلاستر: %s", $c['id'], $c['name'], $types[ $c['page'] ][0] ?? $c['page'], qtb_intents()[ $c['intent'] ] ?? $c['intent'], implode( '، ', array_slice( $c['kws'], 0, 14 ) ) );
+		$b = sprintf( "### شناسه %d — «%s»\nنوع صفحه: %s | نیت: %s\nکلمات کلاستر: %s", $c['id'], $c['name'], qtb_page_label( $c ), qtb_intents()[ $c['intent'] ] ?? $c['intent'], implode( '، ', array_slice( $c['kws'], 0, 14 ) ) );
 		if ( ! empty( $c['serp'] ) ) {
 			$b .= "\nعنوان ۱۰ نتیجه اول گوگل:\n- " . implode( "\n- ", array_slice( (array) $c['serp']['titles'], 0, 10 ) );
 			if ( ! empty( $c['snippets'] ) ) {
@@ -144,9 +144,9 @@ function qtb_ai_gap_batch( $project, $batch, $purpose = 'analysis' ) {
  */
 function qtb_gap_input( $keywords, $c, $clusters_by_id, $serps ) {
 	$money = array();
-	if ( 'blog' === $c['page'] ) {
+	if ( 'article' === $c['page'] ) {
 		foreach ( $clusters_by_id as $o ) {
-			if ( $o['pillar'] === $c['pillar'] && 'blog' !== $o['page'] && count( $money ) < 3 ) {
+			if ( $o['pillar'] === $c['pillar'] && 'article' !== $o['page'] && count( $money ) < 3 ) {
 				$money[] = $o['name'] . ( $o['target'] ? ' (' . $o['target']['url'] . ')' : '' );
 			}
 		}

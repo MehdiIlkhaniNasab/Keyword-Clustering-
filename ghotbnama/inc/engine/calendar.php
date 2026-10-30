@@ -65,12 +65,12 @@ function qtb_calendar_build( $project, $keywords, $clusters, $pillars, $inventor
 	$cands   = array();
 	$max_vol = 1;
 	foreach ( $clusters as $c ) {
-		if ( 'blog' === $c['page'] ) {
+		if ( 'article' === $c['page'] ) {
 			$max_vol = max( $max_vol, $c['vol'] );
 		}
 	}
 	foreach ( $clusters as $c ) {
-		if ( 'blog' !== $c['page'] || 'ok' === $c['coverage'] || $c['vol'] <= 0 ) {
+		if ( 'article' !== $c['page'] || 'ok' === $c['coverage'] || $c['vol'] <= 0 ) {
 			continue;
 		}
 		$demand         = log( 1 + $c['vol'] ) / log( 1 + $max_vol );
@@ -225,11 +225,11 @@ function qtb_calendar_out_links( $c, $clusters, $pillars, $posts, $articles ) {
 	$links = array();
 	$rel   = array();
 	foreach ( $clusters as $o ) {
-		if ( $o['pillar'] !== $c['pillar'] || 'blog' === $o['page'] || $o['id'] === $c['id'] ) {
+		if ( $o['pillar'] !== $c['pillar'] || 'article' === $o['page'] || $o['id'] === $c['id'] ) {
 			continue;
 		}
 		$sim   = qtb_jaccard( $c['core'], $o['core'] );
-		$main  = 'main' === $o['page'] || 'لندینگ‌های اصلی' === ( $o['section'] ?? '' );
+		$main  = 'صفحات اصلی' === ( $o['section'] ?? '' );
 		$rel[] = array( 'c' => $o, 'w' => ( $main ? 2 : 0 ) + $sim + 0.3 * log10( 1 + $o['vol'] ) / 4 + ( $o['target'] ? 0.2 : 0 ) );
 	}
 	$rel = qtb_sort( $rel, 'w' );
@@ -259,7 +259,7 @@ function qtb_calendar_out_links( $c, $clusters, $pillars, $posts, $articles ) {
 		if ( count( $links ) >= 5 ) {
 			break;
 		}
-		if ( 'main' === $o['page'] && $o['pillar'] !== $c['pillar'] ) {
+		if ( 'صفحات اصلی' === ( $o['section'] ?? '' ) && $o['pillar'] !== $c['pillar'] ) {
 			$links[] = array( 'url' => $o['target'] ? $o['target']['url'] : 'لندینگ جدید: ' . $o['name'], 'anchor' => $o['name'] );
 		}
 	}

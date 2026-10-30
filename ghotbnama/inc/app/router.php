@@ -91,7 +91,7 @@ add_action( 'template_redirect', function () {
 	if ( ! is_user_logged_in() ) {
 		qtb_render( 'login', array( 'redirect' => qtb_url( $route ) ) );
 	}
-	if ( ! qtb_can() ) {
+	if ( ! qtb_can_review() ) {
 		status_header( 403 );
 		qtb_render( 'denied' );
 	}
@@ -106,6 +106,7 @@ add_action( 'template_redirect', function () {
 function qtb_project_tabs() {
 	return array(
 		'overview'    => array( 'نمای کلی', 'grid' ),
+		'workshop'    => array( 'کارگاه کلاسترینگ', 'layers' ),
 		'clusters'    => array( 'پیلارها و کلاسترها', 'compass' ),
 		'map'         => array( 'نقشه کلمات', 'list' ),
 		'gaps'        => array( 'فرصت‌ها و شکاف‌ها', 'gap' ),
@@ -124,6 +125,15 @@ function qtb_resolve_route( $route ) {
 	$parts = array_values( array_filter( explode( '/', $route ), 'strlen' ) );
 	$first = $parts[0] ?? '';
 	$out   = array( 'route' => $route, 'nav' => $first ?: 'dashboard', 'project' => null );
+	// SEO team reviewers: the project list, the workshop and the guide.
+	if ( ! qtb_can() ) {
+		if ( in_array( $first, array( 'new', 'settings' ), true ) ) {
+			$first = '';
+		}
+		if ( 'project' === $first ) {
+			$parts[2] = 'workshop';
+		}
+	}
 	switch ( $first ) {
 		case 'new':
 			return array_merge( $out, array( 'view' => 'project-form', 'title' => 'پروژه جدید', 'vars' => array( 'project' => null ) ) );

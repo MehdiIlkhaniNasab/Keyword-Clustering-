@@ -26,7 +26,7 @@ defined( 'ABSPATH' ) || exit;
  * Expected CTR at the realistic target position (≈ 3 for landings, ≈ 4 for blog).
  */
 function qtb_target_ctr( $page ) {
-	return 'blog' === $page ? 0.07 : 0.10;
+	return 'article' === $page ? 0.07 : 0.10;
 }
 
 /**
@@ -88,7 +88,12 @@ function qtb_map_clusters( $keywords, $clusters, $inventory, $fillers = array() 
 	}
 	$used = array(); // url → cluster ids.
 	foreach ( $clusters as &$c ) {
-		$want = 'blog' === $c['page'] ? array( 'post' ) : ( 'product' === $c['page'] ? array( 'product', 'category' ) : array( 'category', 'product', 'page' ) );
+		$want = array(
+			'article' => array( 'post' ),
+			'product' => array( 'product', 'category' ),
+			'archive' => array( 'category', 'page', 'product' ),
+			'landing' => array( 'page', 'category' ),
+		)[ $c['page'] ] ?? array( 'category', 'page' );
 		$cand = array();
 		foreach ( $c['core'] as $t ) {
 			foreach ( $index[ $t ] ?? array() as $pi ) {
@@ -263,11 +268,11 @@ function qtb_score_clusters( $project, $clusters, $pillars, $inventory, $sales =
 			'aov'     => round( $aov ),
 			'units'   => $traffic * $w, // Value without prices (for ranking).
 		);
-		if ( $smax > 0 && 'blog' !== $c['page'] ) {
+		if ( $smax > 0 && 'article' !== $c['page'] ) {
 			$ps                   = $psales[ $c['pillar'] ] ?? array( 'rev' => 0, 'lifetime' => 0 );
 			$c['value']['units'] *= 1 + 0.6 * ( ( $ps['rev'] ?: $ps['lifetime'] ) / $smax );
 		}
-		if ( 'blog' !== $c['page'] ) {
+		if ( 'article' !== $c['page'] ) {
 			$pillar_val[ $c['pillar'] ] = ( $pillar_val[ $c['pillar'] ] ?? 0 ) + $c['value']['units'];
 		}
 	}
@@ -279,7 +284,7 @@ function qtb_score_clusters( $project, $clusters, $pillars, $inventory, $sales =
 	foreach ( $clusters as &$c ) {
 		$share = ( $pillar_val[ $c['pillar'] ] ?? 0 ) / $max_pillar;
 		$units = $c['value']['units'];
-		if ( 'blog' === $c['page'] ) {
+		if ( 'article' === $c['page'] ) {
 			// An article earns through the money pages it links to.
 			$units = $c['value']['traffic'] * ( qtb_intent_weight( $c['intent'] ) + 0.25 * $share );
 		}
@@ -320,7 +325,7 @@ function qtb_score_clusters( $project, $clusters, $pillars, $inventory, $sales =
  */
 function qtb_difficulty_free( $c ) {
 	$d = 18 + 9 * log10( 1 + $c['vol'] ) - 4 * ( count( $c['core'] ) - 1 );
-	if ( 'blog' === $c['page'] ) {
+	if ( 'article' === $c['page'] ) {
 		$d -= 5;
 	}
 	return (int) max( 5, min( 90, round( $d ) ) );
@@ -355,7 +360,7 @@ function qtb_pillar_totals( $clusters, $pillars, $inventory = array(), $sales = 
 			$p['p1']      += 'P1' === $c['priority'] ? 1 : 0;
 			$p['new']     += 'new' === $c['coverage'] ? 1 : 0;
 			$p['score']    = max( $p['score'], $c['score'] );
-			if ( 'blog' === $c['page'] ) {
+			if ( 'article' === $c['page'] ) {
 				++$p['blogs'];
 			} else {
 				++$p['landings'];

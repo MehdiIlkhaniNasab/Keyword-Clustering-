@@ -63,9 +63,10 @@ defined( 'ABSPATH' ) || exit;
 <div class="qtb-panel">
 	<h2><?php echo qtb_icon( 'layers', 18 ); // phpcs:ignore ?> رنگ‌ها در خروجی</h2>
 	<div class="qtb-inline">
-		<span class="qtb-chip is-main">سبز — لندینگ اصلی (صفحه دسته اصلی)</span>
-		<span class="qtb-chip is-category">آبی — لندینگ دسته / نوع / محصول</span>
-		<span class="qtb-chip is-blog">زرد — مقاله بلاگ</span>
+		<span class="qtb-chip is-landing">سبز — لندینگ (خدمات، محلی، صفحه اختصاصی)</span>
+		<span class="qtb-chip is-archive">آبی — آرشیو (دسته، برند، برچسب، ویژگی)</span>
+		<span class="qtb-chip is-product">نارنجی — محصول</span>
+		<span class="qtb-chip is-article">زرد — مقاله</span>
 		<span class="qtb-chip" style="background:#6AA84F;color:#fff!important">سبز تیره — جمع حجم کلاستر</span>
 	</div>
 </div>

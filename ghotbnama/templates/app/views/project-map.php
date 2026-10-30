@@ -62,7 +62,7 @@ $args  = array_filter( array( 'pl' => $f['p'], 'page_type' => $f['page'], 'prio'
 					<td class="num"><?php echo esc_html( qtb_num( $kws[ $m ]['v'] ) ); ?></td>
 					<td><?php echo esc_html( $c['name'] ); ?></td>
 					<td class="qtb-small"><?php echo esc_html( ( $R['pillars'][ $c['pillar'] ]['name'] ?? '' ) . ' › ' . ( $c['section'] ?? '' ) ); ?></td>
-					<td><?php echo qtb_chip_page( $c['page'] ); // phpcs:ignore ?></td>
+					<td><?php echo qtb_chip_page( $c['page'], $c ); // phpcs:ignore ?></td>
 					<td class="qtb-small"><?php echo esc_html( qtb_intents()[ $c['intent'] ] ?? '' ); ?></td>
 					<td><?php echo qtb_chip_prio( $c['priority'] ); // phpcs:ignore ?></td>
 					<td class="qtb-small"><?php echo $c['target'] ? qtb_link( $c['target']['url'], 34 ) : '—'; // phpcs:ignore ?></td>

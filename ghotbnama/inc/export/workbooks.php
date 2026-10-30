@@ -29,13 +29,16 @@ function qtb_xc( $key ) {
 		'gold'     => 'C8A951',
 		'muted'    => '6B7C74',
 		'line'     => 'D9E4DE',
-		'main'     => 'D9EAD3',
-		'landing'  => 'C9DAF8',
-		'blog'     => 'FFF2CC',
+		'landing'  => 'D9EAD3',
+		'archive'  => 'C9DAF8',
+		'product'  => 'FCE5CD',
+		'article'  => 'FFF2CC',
 		'total'    => '6AA84F',
-		'sec_main' => '93C47D',
-		'sec_land' => '6D9EEB',
-		'sec_blog' => 'F1C232',
+		'sec_main'    => '38761D',
+		'sec_landing' => '93C47D',
+		'sec_archive' => '6D9EEB',
+		'sec_product' => 'E69138',
+		'sec_article' => 'F1C232',
 		'grid'     => 'F3F3F3',
 	);
 	return $c[ $key ] ?? $key;
@@ -203,7 +206,7 @@ function qtb_book_research( $project ) {
 	}
 	$r += 2;
 	$d['cells'][ $r ][2] = qtb_c( 'راهنمای رنگ‌ها', array( 'b' => true, 'color' => qtb_xc( 'brand' ) ) );
-	foreach ( array( 'main' => 'لندینگ اصلی (صفحه دسته اصلی)', 'landing' => 'لندینگ دسته / نوع / محصول', 'blog' => 'مقاله بلاگ (پشتیبان فروش)' ) as $k => $label ) {
+	foreach ( array( 'landing' => 'لندینگ (خدمات، محلی، صفحه اختصاصی)', 'archive' => 'آرشیو (دسته، برند، برچسب، ویژگی)', 'product' => 'محصول', 'article' => 'مقاله (پشتیبان فروش)' ) as $k => $label ) {
 		++$r;
 		$d['cells'][ $r ][2] = qtb_c( $label, array( 'bg' => qtb_xc( $k ), 'border' => qtb_xc( 'line' ) ) );
 	}
@@ -217,9 +220,9 @@ function qtb_book_research( $project ) {
 	$d['merges'][] = 'I' . $r . ':J' . $r;
 	foreach ( array_slice( qtb_sort( $R['clusters'], 'score' ), 0, 20 ) as $cl ) {
 		++$r;
-		$vals = array( $cl['name'], $R['pillars'][ $cl['pillar'] ]['name'] ?? '', $types[ $cl['page'] ][0] ?? '', $cl['vol'], $cl['score'], $cl['priority'], qtb_coverage_label( $cl['coverage'] ), qtb_cluster_action( $cl ) );
+		$vals = array( $cl['name'], $R['pillars'][ $cl['pillar'] ]['name'] ?? '', qtb_page_label( $cl ), $cl['vol'], $cl['score'], $cl['priority'], qtb_coverage_label( $cl['coverage'] ), qtb_cluster_action( $cl ) );
 		foreach ( $vals as $i => $v ) {
-			$st = qtb_xs_td( 0 === $i ? array( 'b' => true, 'bg' => qtb_xc( 'blog' === $cl['page'] ? 'blog' : ( 'main' === $cl['page'] ? 'main' : 'landing' ) ) ) : ( is_int( $v ) ? array( 'fmt' => '#,##0', 'h' => 'center' ) : array() ) );
+			$st = qtb_xs_td( 0 === $i ? array( 'b' => true, 'bg' => qtb_xc( $cl['page'] ) ) : ( is_int( $v ) ? array( 'fmt' => '#,##0', 'h' => 'center' ) : array() ) );
 			$d['cells'][ $r ][ $i + 2 ] = qtb_c( $v, $st );
 		}
 		$d['merges'][] = 'I' . $r . ':J' . $r;
@@ -249,7 +252,7 @@ function qtb_book_research( $project ) {
 						(int) $kws[ $m ]['v'],
 						0 === $j ? 'اصلی' : 'فرعی',
 						qtb_intents()[ $cl['intent'] ] ?? '',
-						qtb_c( $types[ $cl['page'] ][0] ?? '', qtb_xs_td( array( 'bg' => qtb_xc( 'blog' === $cl['page'] ? 'blog' : ( 'main' === $cl['page'] ? 'main' : 'landing' ) ) ) ) ),
+						qtb_c( qtb_page_label( $cl ), qtb_xs_td( array( 'bg' => qtb_xc( $cl['page'] ) ) ) ),
 						$cl['priority'],
 						(int) $cl['score'],
 						(int) $cl['diff'],
@@ -267,13 +270,14 @@ function qtb_book_research( $project ) {
 	$rows = array();
 	foreach ( qtb_sort( $R['clusters'], 'score' ) as $cl ) {
 		$rows[] = array(
-			qtb_c( $cl['name'], qtb_xs_td( array( 'b' => true, 'bg' => qtb_xc( 'blog' === $cl['page'] ? 'blog' : ( 'main' === $cl['page'] ? 'main' : 'landing' ) ) ) ) ),
+			qtb_c( $cl['name'], qtb_xs_td( array( 'b' => true, 'bg' => qtb_xc( $cl['page'] ) ) ) ),
 			$R['pillars'][ $cl['pillar'] ]['name'] ?? '',
 			$cl['section'] ?? '',
 			count( $cl['kws'] ),
 			(int) $cl['vol'],
 			qtb_intents()[ $cl['intent'] ] ?? '',
-			$types[ $cl['page'] ][0] ?? '',
+			qtb_page_label( $cl ),
+			qtb_c( (string) ( $cl['page_reason'] ?? '' ), qtb_xs_td( array( 'wrap' => true, 'size' => 9 ) ) ),
 			$cl['priority'],
 			(int) $cl['score'],
 			(int) $cl['diff'],
@@ -291,7 +295,7 @@ function qtb_book_research( $project ) {
 			qtb_cluster_action( $cl ),
 		);
 	}
-	$sheets[] = qtb_table_sheet( 'کلاسترها', array( 'کلاستر (کلمه اصلی)' => 28, 'پیلار' => 16, 'بخش' => 16, 'تعداد کلمات' => 9, 'حجم کل' => 10, 'نیت' => 16, 'نوع صفحه' => 13, 'اولویت' => 8, 'امتیاز' => 8, 'سختی' => 8, 'ترافیک بالقوه' => 11, 'فروش بالقوه (تومان)' => 15, 'صفحه هدف' => 34, 'وضعیت پوشش' => 18, 'جایگاه ما' => 9, 'برد سریع' => 9, 'رقبای برتر' => 36, 'هشدارها' => 40, 'بررسی با گوگل' => 10, 'اقدام بعدی' => 40 ), $rows, qtb_xc( 'brand2' ) );
+	$sheets[] = qtb_table_sheet( 'کلاسترها', array( 'کلاستر (کلمه اصلی)' => 28, 'پیلار' => 16, 'بخش' => 16, 'تعداد کلمات' => 9, 'حجم کل' => 10, 'نیت' => 16, 'نوع صفحه' => 13, 'چرا این نوع صفحه' => 44, 'اولویت' => 8, 'امتیاز' => 8, 'سختی' => 8, 'ترافیک بالقوه' => 11, 'فروش بالقوه (تومان)' => 15, 'صفحه هدف' => 34, 'وضعیت پوشش' => 18, 'جایگاه ما' => 9, 'برد سریع' => 9, 'رقبای برتر' => 36, 'هشدارها' => 40, 'بررسی با گوگل' => 10, 'اقدام بعدی' => 40 ), $rows, qtb_xc( 'brand2' ) );
 
 	// Content gaps.
 	$rows = array();
@@ -303,7 +307,7 @@ function qtb_book_research( $project ) {
 		$w      = qtb_xs_td( array( 'wrap' => true, 'v' => 'top' ) );
 		$rows[] = array(
 			qtb_c( $cl['name'], qtb_xs_td( array( 'b' => true, 'v' => 'top' ) ) ),
-			$types[ $cl['page'] ][0] ?? '',
+			qtb_page_label( $cl ),
 			qtb_c( (string) ( $g['intent'] ?? '' ), $w ),
 			qtb_c( (string) ( $g['angle'] ?? '' ), $w ),
 			qtb_c( implode( "\n", (array) ( $g['must_cover'] ?? array() ) ), $w ),
@@ -345,7 +349,7 @@ function qtb_book_research( $project ) {
 			}
 			$dom[ $dm ]['n']++;
 			$dom[ $dm ]['vol'] += $cl['vol'];
-			$dom[ $dm ][ 'blog' === $cl['page'] ? 'blog' : 'land' ]++;
+			$dom[ $dm ][ 'article' === $cl['page'] ? 'blog' : 'land' ]++;
 		}
 	}
 	if ( $dom ) {
@@ -408,8 +412,8 @@ function qtb_book_research( $project ) {
 function qtb_pillar_sheet( $p, $by_id, $kws ) {
 	$sh  = array( 'name' => $p['name'], 'rtl' => true, 'tab' => qtb_xc( 'total' ), 'cols' => array( 1 => 2.5 ), 'cells' => array(), 'merges' => array(), 'heights' => array( 1 => 30, 2 => 24, 3 => 22, 4 => 16 ), 'freeze' => 'A5' );
 	$col = 2;
-	$secfill = array( 'main' => qtb_xc( 'sec_main' ), 'landing' => qtb_xc( 'sec_land' ), 'blog' => qtb_xc( 'sec_blog' ) );
-	$fill    = array( 'main' => qtb_xc( 'main' ), 'category' => qtb_xc( 'landing' ), 'product' => qtb_xc( 'landing' ), 'blog' => qtb_xc( 'blog' ) );
+	$secfill = array( 'main' => qtb_xc( 'sec_main' ), 'landing' => qtb_xc( 'sec_landing' ), 'archive' => qtb_xc( 'sec_archive' ), 'product' => qtb_xc( 'sec_product' ), 'article' => qtb_xc( 'sec_article' ) );
+	$fill    = array( 'landing' => qtb_xc( 'landing' ), 'archive' => qtb_xc( 'archive' ), 'product' => qtb_xc( 'product' ), 'article' => qtb_xc( 'article' ) );
 	$max_row = 5;
 	foreach ( $p['sections'] as $s ) {
 		$start = $col;
@@ -418,7 +422,7 @@ function qtb_pillar_sheet( $p, $by_id, $kws ) {
 			if ( ! $c ) {
 				continue;
 			}
-			$f = $fill[ $c['page'] ] ?? qtb_xc( 'landing' );
+			$f = $fill[ $c['page'] ] ?? qtb_xc( 'archive' );
 			$sh['cols'][ $col ]     = 30;
 			$sh['cols'][ $col + 1 ] = 8.5;
 			$sh['cols'][ $col + 2 ] = 2.5;
@@ -448,7 +452,7 @@ function qtb_pillar_sheet( $p, $by_id, $kws ) {
 			$col    += 3;
 		}
 		if ( $col > $start ) {
-			$sh['cells'][2][ $start ] = qtb_c( $s['name'], array( 'b' => true, 'size' => 11, 'bg' => $secfill[ $s['kind'] ] ?? qtb_xc( 'sec_land' ), 'color' => 'blog' === $s['kind'] ? qtb_xc( 'ink' ) : 'FFFFFF', 'h' => 'center' ) );
+			$sh['cells'][2][ $start ] = qtb_c( $s['name'], array( 'b' => true, 'size' => 11, 'bg' => $secfill[ $s['kind'] ] ?? qtb_xc( 'sec_archive' ), 'color' => 'article' === $s['kind'] ? qtb_xc( 'ink' ) : 'FFFFFF', 'h' => 'center' ) );
 			$end = $col - 2;
 			if ( $end > $start ) {
 				$sh['merges'][] = qtb_ref( 2, $start ) . ':' . qtb_ref( 2, $end );
@@ -596,7 +600,7 @@ function qtb_book_calendar( $project ) {
 		foreach ( $a['cloud'] as $j => $kv ) {
 			$st = array( 'border' => qtb_xc( 'line' ), 'bg' => 'F3F3F3' );
 			if ( 0 === $j ) {
-				$st = array( 'border' => qtb_xc( 'line' ), 'bg' => qtb_xc( 'main' ), 'b' => true );
+				$st = array( 'border' => qtb_xc( 'line' ), 'bg' => qtb_xc( 'landing' ), 'b' => true );
 			}
 			$bk['cells'][ $r ][ $col ]     = qtb_c( $kv[0], $st );
 			$bk['cells'][ $r ][ $col + 1 ] = qtb_c( (int) $kv[1], array_merge( $st, array( 'fmt' => '#,##0', 'h' => 'center' ) ) );

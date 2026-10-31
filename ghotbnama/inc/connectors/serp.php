@@ -129,6 +129,11 @@ function qtb_serp_fetch( $keyword ) {
 	$d    = json_decode( (string) wp_remote_retrieve_body( $res ), true );
 	if ( 200 !== $code || ! is_array( $d ) ) {
 		$msg = is_array( $d ) ? (string) ( $d['message'] ?? $d['error'] ?? $d['status_message'] ?? '' ) : '';
+		if ( in_array( $code, array( 401, 403 ), true ) && ! is_array( $d ) ) {
+			// Not the provider's JSON: a firewall / sanctions block (Cloudflare) or the proxy refused it.
+			$via = qtb_proxy_defined() && 'none' !== qtb_setting( 'proxy_mode', 'smart' );
+			return new WP_Error( 'qtb_serp_auth', 'درخواست به خود سرویس نتایج گوگل نرسید (HTTP ' . $code . ' بدون پاسخ سرویس): ' . ( $via ? 'پروکسی وردپرس درخواست را رد کرد؛ پروکسی را بررسی کنید.' : 'آی‌پی سرور سایت مسدود است (معمولاً سرور ایران). در wp-config پروکسی خارج تعریف کنید (WP_PROXY_HOST و WP_PROXY_PORT) تا این درخواست از پروکسی برود.' ) . ' کلید شما احتمالاً سالم است.' );
+		}
 		if ( in_array( $code, array( 401, 403 ), true ) ) {
 			return new WP_Error( 'qtb_serp_auth', 'کلید سرویس نتایج گوگل رد شد یا اعتبار حساب تمام شده است (HTTP ' . $code . ')' . ( $msg ? ': ' . mb_substr( $msg, 0, 160 ) : '' ) );
 		}

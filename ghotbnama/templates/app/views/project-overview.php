@@ -10,7 +10,7 @@
 defined( 'ABSPATH' ) || exit;
 
 $job     = qtb_data_get( $project['id'], 'job', array() );
-$running = $job && empty( $job['done'] ) && empty( $job['error'] );
+$running = $job && empty( $job['done'] ) && empty( $job['error'] ) && empty( $job['paused'] );
 $st      = $job ? qtb_job_status( $job ) : null;
 $meta    = $R['meta'];
 $input   = qtb_data_get( $project['id'], 'input', array() );
@@ -48,7 +48,8 @@ $mode    = qtb_serp_mode( $project );
 		</div>
 		<div>
 			<div class="qtb-progress"><i style="width:<?php echo esc_attr( $st ? $st['pct'] : 0 ); ?>%"></i></div>
-			<p class="qtb-small" data-qtb-label style="margin:0 0 8px;color:#E9F5EF"><?php echo esc_html( $st ? ( $st['error'] ? 'خطا: ' . $st['error'] : ( $st['done'] ? 'آخرین اجرا کامل شد.' : $st['label'] . '…' ) ) : 'آماده اجرا' ); ?></p>
+			<p class="qtb-small" data-qtb-label style="margin:0 0 8px;color:#E9F5EF"><?php echo esc_html( $st ? ( $st['error'] ? 'خطا: ' . $st['error'] : ( $st['done'] ? 'آخرین اجرا کامل شد.' : ( $st['paused'] ? 'متوقف شده: ' . $st['label'] : $st['label'] . '…' ) ) ) : 'آماده اجرا' ); ?></p>
+			<?php qtb_view( 'job-ctl', array( 'st' => $st ) ); ?>
 			<ul class="qtb-steps" data-qtb-steps>
 				<?php foreach ( ( $st ? $st['steps'] : array_map( function ( $k, $l ) { return array( 'key' => $k, 'label' => $l, 'state' => 'todo' ); }, array_keys( qtb_pipeline_steps() ), qtb_pipeline_steps() ) ) as $s ) : ?>
 					<li class="is-<?php echo esc_attr( $s['state'] ); ?>"><i></i><?php echo esc_html( $s['label'] ); ?></li>

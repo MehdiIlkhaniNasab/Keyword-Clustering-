@@ -27,6 +27,7 @@ add_action( 'rest_api_init', function () {
 		return is_numeric( $v );
 	} ) );
 	register_rest_route( $ns, '/run/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_run', 'permission_callback' => $perm, 'args' => $id ) );
+	register_rest_route( $ns, '/control/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_control', 'permission_callback' => $perm, 'args' => $id ) );
 	register_rest_route( $ns, '/tick/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_tick', 'permission_callback' => $perm, 'args' => $id ) );
 	register_rest_route( $ns, '/status/(?P<id>\d+)', array( 'methods' => 'GET', 'callback' => 'qtb_rest_status', 'permission_callback' => $perm, 'args' => $id ) );
 	register_rest_route( $ns, '/upload/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_upload', 'permission_callback' => $perm, 'args' => $id ) );
@@ -71,6 +72,25 @@ function qtb_rest_run( $req ) {
 	}
 	qtb_pipeline_start( $p, $source, $from );
 	return qtb_job_status( qtb_pipeline_tick( $p['id'], 18 ) );
+}
+
+/**
+ * Stop / resume / skip / cancel the run.
+ */
+function qtb_rest_control( $req ) {
+	$p = qtb_rest_project( $req );
+	if ( is_wp_error( $p ) ) {
+		return $p;
+	}
+	$job = qtb_job_control( $p['id'], 'job', (string) $req['action'] );
+	if ( is_wp_error( $job ) ) {
+		$job->add_data( array( 'status' => 400 ) );
+		return $job;
+	}
+	if ( ! empty( $job['error'] ) ) {
+		qtb_project_status( $p['id'], 'error' );
+	}
+	return qtb_job_status( $job );
 }
 
 /**
@@ -264,6 +284,7 @@ add_action( 'rest_api_init', function () {
 		return qtb_can();
 	};
 	register_rest_route( $ns, '/ws/start/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_start', 'permission_callback' => $rev ) );
+	register_rest_route( $ns, '/ws/control/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_control', 'permission_callback' => $rev ) );
 	register_rest_route( $ns, '/ws/tick/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_tick', 'permission_callback' => $rev ) );
 	register_rest_route( $ns, '/ws/edit/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_edit', 'permission_callback' => $rev ) );
 	register_rest_route( $ns, '/ws/comment/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_comment', 'permission_callback' => $rev ) );
@@ -280,7 +301,7 @@ function qtb_rest_ws_start( $req ) {
 		return $p;
 	}
 	$cur = qtb_data_get( $p['id'], 'ws_job', array() );
-	if ( $cur && empty( $cur['done'] ) && empty( $cur['error'] ) && ! empty( $cur['started'] ) && strtotime( $cur['started'] ) > time() - 1800 ) {
+	if ( $cur && empty( $cur['done'] ) && empty( $cur['error'] ) && empty( $cur['paused'] ) && ! empty( $cur['started'] ) && strtotime( $cur['started'] ) > time() - 1800 ) {
 		return new WP_Error( 'qtb_ws_busy', 'یک کار دیگر در حال اجراست؛ صبر کنید تا تمام شود.', array( 'status' => 409 ) );
 	}
 	$action = (string) $req['action'];
@@ -312,6 +333,31 @@ function qtb_rest_ws_start( $req ) {
 	}
 	qtb_ws_start( $p, $action, $args );
 	return qtb_ws_job_status( qtb_ws_tick( $p['id'], 18 ) );
+}
+
+/**
+ * Stop / resume / skip / cancel the workshop job.
+ */
+function qtb_rest_ws_control( $req ) {
+	$p = qtb_rest_project( $req );
+	if ( is_wp_error( $p ) ) {
+		return $p;
+	}
+	$job = qtb_job_control( $p['id'], 'ws_job', (string) $req['action'] );
+	if ( is_wp_error( $job ) ) {
+		$job->add_data( array( 'status' => 400 ) );
+		return $job;
+	}
+	// A cancelled topic goes back to its last state.
+	if ( ! empty( $job['error'] ) && 'topic' === ( $job['action'] ?? '' ) ) {
+		$ws = qtb_ws_get( $p['id'] );
+		$ti = qtb_ws_topic_index( $ws, $job['tid'] );
+		if ( null !== $ti && 'running' === $ws['topics'][ $ti ]['status'] ) {
+			$ws['topics'][ $ti ]['status'] = $ws['topics'][ $ti ]['clusters'] ? 'ready' : 'new';
+			qtb_ws_put( $p['id'], $ws );
+		}
+	}
+	return qtb_ws_job_status( $job );
 }
 
 /**

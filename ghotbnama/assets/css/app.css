@@ -344,6 +344,10 @@ body.qtb-app { margin: 0; background: var(--paper); color: var(--ink); font: 14p
 .qtb-login-box p { margin: 0; }
 
 /* ---------- Responsive ---------- */
+/* ---- Job controls ---- */
+.qtb-jobctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 4px; }
+.qtb-jobctl-msg { flex: 1 1 100%; margin: 0; padding: 8px 10px; border-radius: 10px; background: rgba(200,169,81,.16); border: 1px solid rgba(200,169,81,.45); color: #FBF0CF !important; font-size: 12.5px; }
+
 /* ---- Workshop ---- */
 .qtb-wsjob.is-done { padding: 12px 16px; }
 .qtb-wsjob.is-done .qtb-steps, .qtb-wsjob.is-done .qtb-progress { display: none; }

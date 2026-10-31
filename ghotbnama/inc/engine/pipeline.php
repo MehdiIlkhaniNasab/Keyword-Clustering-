@@ -92,9 +92,10 @@ function qtb_job_status( $job ) {
 	$step   = $job['steps'][ $at ] ?? '';
 	$frac   = (float) ( $job['sub']['frac'] ?? 0 );
 	return array(
-		'done'  => ! empty( $job['done'] ),
-		'error' => (string) ( $job['error'] ?? '' ),
-		'step'  => $step,
+		'done'   => ! empty( $job['done'] ),
+		'error'  => (string) ( $job['error'] ?? '' ),
+		'paused' => ! empty( $job['paused'] ) ? $job['paused'] : null,
+		'step'   => $step,
 		'label' => $labels[ $step ] ?? 'پایان',
 		'pct'   => ! empty( $job['done'] ) ? 100 : (int) min( 99, round( 100 * ( $at + $frac ) / $n ) ),
 		'log'   => array_slice( (array) ( $job['log'] ?? array() ), -12 ),
@@ -102,6 +103,73 @@ function qtb_job_status( $job ) {
 			return array( 'key' => $s, 'label' => $labels[ $s ] ?? $s, 'state' => $i < $at || ! empty( $job['done'] ) ? 'done' : ( $i === $at ? 'now' : 'todo' ) );
 		}, $job['steps'] ?? array(), array_keys( $job['steps'] ?? array() ) ),
 	);
+}
+
+/**
+ * Pause a job (a service failed or the reviewer pressed «توقف»); it resumes at the same step.
+ *
+ * @param string $why serp|user.
+ */
+function qtb_job_pause( &$job, $why, $msg ) {
+	$job['paused'] = array( 'why' => $why, 'msg' => $msg );
+	qtb_job_log( $job, $msg, 'warn' );
+}
+
+/**
+ * Stop / resume / skip / cancel a job (pipeline or workshop).
+ *
+ * @param string $key    Data key of the job (job|ws_job).
+ * @param string $action pause|resume|skip|cancel.
+ * @return array|WP_Error job
+ */
+function qtb_job_control( $project_id, $key, $action ) {
+	$job = qtb_data_get( $project_id, $key, array() );
+	if ( ! $job || ! empty( $job['done'] ) || ! empty( $job['error'] ) ) {
+		return new WP_Error( 'qtb_job', 'کاری در حال اجرا نیست.' );
+	}
+	switch ( $action ) {
+		case 'pause':
+		case 'cancel':
+			// A running slice saves its own copy of the job: leave a flag it reads before going on.
+			if ( get_transient( ( 'job' === $key ? 'qtb_lock_' : 'qtb_wslock_' ) . $project_id ) ) {
+				qtb_data_put( $project_id, $key . '_ctl', $action );
+				return $job;
+			}
+			qtb_data_put( $project_id, $key . '_ctl', $action );
+			qtb_job_stop_asked( $project_id, $key, $job );
+			break;
+		case 'resume':
+		case 'skip':
+			qtb_data_put( $project_id, $key . '_ctl', '' );
+			unset( $job['paused'] );
+			if ( 'skip' === $action ) {
+				$job['skip_serp'] = 1;
+			}
+			qtb_job_log( $job, 'skip' === $action ? 'ادامه بدون نتایج گوگل باقی‌مانده.' : 'ادامه از همان مرحله.' );
+			break;
+		default:
+			return new WP_Error( 'qtb_job', 'دستور نامعتبر.' );
+	}
+	qtb_data_put( $project_id, $key, $job );
+	return $job;
+}
+
+/**
+ * Did the reviewer ask the running job to stop? (Read between slices.)
+ */
+function qtb_job_stop_asked( $project_id, $key, &$job ) {
+	$ctl = qtb_data_get( $project_id, $key . '_ctl', '' );
+	if ( 'pause' !== $ctl && 'cancel' !== $ctl ) {
+		return false;
+	}
+	qtb_data_put( $project_id, $key . '_ctl', '' );
+	if ( 'cancel' === $ctl ) {
+		$job['error'] = 'اجرا توسط شما لغو شد.';
+		qtb_job_log( $job, $job['error'], 'warn' );
+	} else {
+		qtb_job_pause( $job, 'user', 'توسط شما متوقف شد.' );
+	}
+	return true;
 }
 
 /**
@@ -113,7 +181,7 @@ function qtb_pipeline_tick( $project_id, $budget = 20 ) {
 	qtb_raise_limits( $budget + 120 );
 	$project = qtb_project( $project_id );
 	$job     = qtb_data_get( $project_id, 'job', array() );
-	if ( ! $project || ! $job || ! empty( $job['done'] ) || ! empty( $job['error'] ) ) {
+	if ( ! $project || ! $job || ! empty( $job['done'] ) || ! empty( $job['error'] ) || ! empty( $job['paused'] ) ) {
 		return $job;
 	}
 	// One runner at a time per project.
@@ -124,7 +192,10 @@ function qtb_pipeline_tick( $project_id, $budget = 20 ) {
 	set_transient( $lock, 1, $budget + 90 );
 	$t0 = microtime( true );
 	try {
-		while ( empty( $job['done'] ) && empty( $job['error'] ) && microtime( true ) - $t0 < $budget ) {
+		while ( empty( $job['done'] ) && empty( $job['error'] ) && empty( $job['paused'] ) && microtime( true ) - $t0 < $budget ) {
+			if ( qtb_job_stop_asked( $project_id, 'job', $job ) ) {
+				break;
+			}
 			$step = $job['steps'][ $job['at'] ] ?? null;
 			if ( null === $step ) {
 				$job['done'] = true;
@@ -151,6 +222,9 @@ function qtb_pipeline_tick( $project_id, $budget = 20 ) {
 	} catch ( Throwable $e ) {
 		$job['error'] = 'خطای داخلی: ' . $e->getMessage();
 		qtb_job_log( $job, $job['error'] . ' (' . basename( $e->getFile() ) . ':' . $e->getLine() . ')', 'error' );
+		qtb_project_status( $project_id, 'error' );
+	}
+	if ( qtb_job_stop_asked( $project_id, 'job', $job ) && ! empty( $job['error'] ) ) {
 		qtb_project_status( $project_id, 'error' );
 	}
 	qtb_data_put( $project_id, 'job', $job );
@@ -328,14 +402,22 @@ function qtb_step_serp( $project, &$job, $deadline ) {
 		$i   = $todo[ $pos ];
 		$res = qtb_serp_fetch( $kws[ $i ]['k'] );
 		if ( is_wp_error( $res ) ) {
-			if ( in_array( $res->get_error_code(), array( 'qtb_serp_auth', 'qtb_serp_off' ), true ) ) {
-				qtb_job_log( $job, $res->get_error_message() . ' — ادامه با نتایجی که گرفته شد.', 'warn' );
-				break;
+			$hard = in_array( $res->get_error_code(), array( 'qtb_serp_auth', 'qtb_serp_off' ), true );
+			if ( ! $hard ) {
+				$job['sub']['fails']++;
 			}
-			$job['sub']['fails']++;
-			if ( $job['sub']['fails'] > 12 ) {
-				qtb_job_log( $job, 'خطاهای پشت‌سرهم سرویس نتایج گوگل: ' . $res->get_error_message() . ' — ادامه با نتایجی که گرفته شد.', 'warn' );
-				break;
+			if ( $hard || $job['sub']['fails'] > 12 ) {
+				if ( ! empty( $job['skip_serp'] ) ) {
+					qtb_job_log( $job, $res->get_error_message() . ' — ادامه با نتایجی که گرفته شد (به انتخاب شما).', 'warn' );
+					break;
+				}
+				// Stop here (same keyword) so the reviewer can fix the key / proxy and resume this step.
+				$job['sub']['pos']   = $pos;
+				$job['sub']['fails'] = 0;
+				$job['sub']['frac']  = $pos / max( 1, count( $todo ) );
+				qtb_data_put( $project['id'], 'serps', $serps );
+				qtb_job_pause( $job, 'serp', 'نتایج گوگل متوقف شد: ' . $res->get_error_message() );
+				return false;
 			}
 			++$pos;
 			continue;

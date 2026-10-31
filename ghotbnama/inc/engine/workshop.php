@@ -170,6 +170,7 @@ function qtb_ws_job_status( $job ) {
 		'tid'    => (int) ( $job['tid'] ?? 0 ),
 		'done'   => ! empty( $job['done'] ),
 		'error'  => (string) ( $job['error'] ?? '' ),
+		'paused' => ! empty( $job['paused'] ) ? $job['paused'] : null,
 		'label'  => $lab[ $steps[ $at ] ?? '' ] ?? 'پایان',
 		'pct'    => ! empty( $job['done'] ) ? 100 : (int) min( 99, round( 100 * ( $at + $frac ) / max( 1, count( $steps ) ) ) ),
 		'log'    => array_slice( (array) ( $job['log'] ?? array() ), -10 ),
@@ -186,7 +187,7 @@ function qtb_ws_tick( $pid, $budget = 20 ) {
 	qtb_raise_limits( $budget + 120 );
 	$project = qtb_project( $pid );
 	$job     = qtb_data_get( $pid, 'ws_job', array() );
-	if ( ! $project || ! $job || ! empty( $job['done'] ) || ! empty( $job['error'] ) ) {
+	if ( ! $project || ! $job || ! empty( $job['done'] ) || ! empty( $job['error'] ) || ! empty( $job['paused'] ) ) {
 		return $job;
 	}
 	$lock = 'qtb_wslock_' . $pid;
@@ -197,7 +198,10 @@ function qtb_ws_tick( $pid, $budget = 20 ) {
 	$deadline = microtime( true ) + $budget;
 	$steps    = array_keys( qtb_ws_steps( $job['action'] ) );
 	try {
-		while ( empty( $job['done'] ) && empty( $job['error'] ) && microtime( true ) < $deadline ) {
+		while ( empty( $job['done'] ) && empty( $job['error'] ) && empty( $job['paused'] ) && microtime( true ) < $deadline ) {
+			if ( qtb_job_stop_asked( $pid, 'ws_job', $job ) ) {
+				break;
+			}
 			$step = $steps[ $job['step'] ] ?? null;
 			if ( null === $step ) {
 				$job['done'] = true;
@@ -223,6 +227,7 @@ function qtb_ws_tick( $pid, $budget = 20 ) {
 		$job['error'] = 'خطای داخلی: ' . $e->getMessage();
 		qtb_job_log( $job, $job['error'] . ' (' . basename( $e->getFile() ) . ':' . $e->getLine() . ')', 'error' );
 	}
+	qtb_job_stop_asked( $pid, 'ws_job', $job );
 	if ( ! empty( $job['error'] ) && 'topic' === $job['action'] ) {
 		$ws = qtb_ws_get( $pid );
 		$ti = qtb_ws_topic_index( $ws, $job['tid'] );
@@ -558,8 +563,15 @@ function qtb_ws_topic_serp( $project, &$job, $deadline ) {
 		$job['sub']['pos']++;
 		if ( is_wp_error( $res ) ) {
 			if ( in_array( $res->get_error_code(), array( 'qtb_serp_auth', 'qtb_serp_off' ), true ) || ++$fails > 8 ) {
-				qtb_job_log( $job, $res->get_error_message() . ' — ادامه با نتایجی که گرفته شد.', 'warn' );
-				break;
+				if ( ! empty( $job['skip_serp'] ) ) {
+					qtb_job_log( $job, $res->get_error_message() . ' — ادامه با نتایجی که گرفته شد (به انتخاب شما).', 'warn' );
+					break;
+				}
+				// Back to this keyword; resume after the key / proxy is fixed.
+				$job['sub']['pos']--;
+				qtb_data_put( $project['id'], 'serps', $serps );
+				qtb_job_pause( $job, 'serp', 'نتایج گوگل متوقف شد: ' . $res->get_error_message() );
+				return false;
 			}
 			continue;
 		}

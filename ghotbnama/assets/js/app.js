@@ -80,7 +80,18 @@
 		var bar = $( '.qtb-progress i', box );
 		if ( bar ) { bar.style.width = ( st.pct || 0 ) + '%'; }
 		var lab = $( '[data-qtb-label]', box );
-		if ( lab ) { lab.textContent = st.error ? 'خطا: ' + st.error : ( st.done ? 'تمام شد؛ در حال بارگذاری نتایج…' : st.label + '… ' + fa( st.pct ) + '٪' ); }
+		if ( lab ) { lab.textContent = st.error ? 'خطا: ' + st.error : ( st.done ? 'تمام شد؛ در حال بارگذاری نتایج…' : ( st.paused ? 'متوقف شده: ' + st.label : st.label + '… ' + fa( st.pct ) + '٪' ) ); }
+		var ctl = $( '[data-qtb-ctl]', box );
+		if ( ctl ) {
+			var live = ! st.done && ! st.error;
+			ctl.hidden = ! live;
+			var msg = $( '[data-qtb-ctl-msg]', ctl );
+			msg.hidden = ! st.paused;
+			msg.textContent = st.paused ? st.paused.msg : '';
+			$( '[data-act="pause"]', ctl ).hidden = !! st.paused;
+			$( '[data-act="resume"]', ctl ).hidden = ! st.paused;
+			$( '[data-act="skip"]', ctl ).hidden = ! ( st.paused && 'serp' === st.paused.why );
+		}
 		var ul = $( '[data-qtb-steps]', box );
 		if ( ul && st.steps ) {
 			ul.innerHTML = st.steps.map( function ( s ) { return '<li class="is-' + s.state + '"><i></i>' + s.label + '</li>'; } ).join( '' );
@@ -109,6 +120,7 @@
 				fails = 0;
 				paint( st );
 				if ( st.error ) { busy( false ); toast( st.error, true ); return; }
+				if ( st.paused ) { busy( false ); toast( st.paused.msg, 'serp' === st.paused.why ); return; }
 				if ( st.done ) {
 					setTimeout( function () { location.href = location.href.replace( /[?&]run=1/, '' ).replace( /#run$/, '' ); }, 900 );
 					return;
@@ -146,6 +158,19 @@
 				} ).catch( function ( err ) { busy( false ); toast( err.message, true ); } );
 			} );
 		}
+		$$( '[data-qtb-ctl] [data-act]', run ).forEach( function ( b ) {
+			b.addEventListener( 'click', function () {
+				var act = b.getAttribute( 'data-act' );
+				if ( 'cancel' === act && ! window.confirm( 'اجرا لغو شود؟ نتیجه قبلی پروژه دست نمی‌خورد.' ) ) { return; }
+				b.disabled = true;
+				api( 'control/' + pid, { action: act } ).then( function ( st ) {
+					paint( st );
+					if ( 'resume' === act || 'skip' === act ) { loop( pid, api( 'tick/' + pid ) ); }
+					if ( 'pause' === act ) { toast( 'در پایان همین بخش (حداکثر حدود ۲۰ ثانیه) متوقف می‌شود.' ); }
+					if ( 'cancel' === act ) { busy( false ); }
+				} ).catch( function ( err ) { toast( err.message, true ); } ).then( function () { b.disabled = false; } );
+			} );
+		} );
 		if ( '1' === run.getAttribute( 'data-running' ) ) {
 			loop( pid, api( 'tick/' + pid ) );
 		} else if ( /[?&]run=1/.test( location.search ) && run.scrollIntoView ) {
@@ -325,6 +350,7 @@
 				if ( tt ) { tt.textContent = wsNames[ st.action ] || ''; }
 				paint( st, wsj );
 				if ( st.error ) { wsBusy( false ); toast( st.error, true ); return; }
+				if ( st.paused ) { wsBusy( false ); toast( st.paused.msg, 'serp' === st.paused.why ); return; }
 				if ( st.done ) {
 					setTimeout( function () { wsGoto( st.action, 'topic' === st.action ? st.tid : 0 ); }, 900 );
 					return;
@@ -345,6 +371,19 @@
 		if ( '1' === wsj.getAttribute( 'data-running' ) ) {
 			wsLoop( api( 'ws/tick/' + wsPid ) );
 		}
+		$$( '[data-qtb-ctl] [data-act]', wsj ).forEach( function ( b ) {
+			b.addEventListener( 'click', function () {
+				var act = b.getAttribute( 'data-act' );
+				if ( 'cancel' === act && ! window.confirm( 'این کار لغو شود؟' ) ) { return; }
+				b.disabled = true;
+				api( 'ws/control/' + wsPid, { action: act } ).then( function ( st ) {
+					paint( st, wsj );
+					if ( 'resume' === act || 'skip' === act ) { wsLoop( api( 'ws/tick/' + wsPid ) ); }
+					if ( 'pause' === act ) { toast( 'در پایان همین بخش (حداکثر حدود ۲۰ ثانیه) متوقف می‌شود.' ); }
+					if ( 'cancel' === act ) { wsBusy( false ); setTimeout( reloadKeepScroll, 800 ); }
+				} ).catch( function ( err ) { toast( err.message, true ); } ).then( function () { b.disabled = false; } );
+			} );
+		} );
 		document.addEventListener( 'click', function ( e ) {
 			var b = e.target.closest( '[data-qtb-wsgo]' );
 			if ( ! b || b.disabled ) { return; }

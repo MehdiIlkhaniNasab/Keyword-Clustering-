@@ -129,6 +129,7 @@ function qtb_ws_start( $project, $action, $args = array() ) {
 		'done'    => false,
 		'error'   => '',
 		'started' => qtb_now(),
+		'touched' => time(),
 		't0'      => microtime( true ),
 		'cost0'   => qtb_ai_usage()['cost'],
 		'req0'    => qtb_ai_usage()['requests'],
@@ -228,6 +229,7 @@ function qtb_ws_tick( $pid, $budget = 20 ) {
 		qtb_job_log( $job, $job['error'] . ' (' . basename( $e->getFile() ) . ':' . $e->getLine() . ')', 'error' );
 	}
 	qtb_job_stop_asked( $pid, 'ws_job', $job );
+	$job['touched'] = time();
 	if ( ! empty( $job['error'] ) && 'topic' === $job['action'] ) {
 		$ws = qtb_ws_get( $pid );
 		$ti = qtb_ws_topic_index( $ws, $job['tid'] );

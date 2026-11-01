@@ -119,7 +119,7 @@ function qtb_project_save( $data, $id = 0 ) {
 }
 
 /**
- * Set a project's status (new|running|ready|error).
+ * Set a project's status (new|running|paused|ready|error).
  */
 function qtb_project_status( $id, $status ) {
 	global $wpdb;
@@ -133,6 +133,8 @@ function qtb_project_delete( $id ) {
 	global $wpdb;
 	$wpdb->delete( qtb_table( 'projects' ), array( 'id' => (int) $id ) ); // phpcs:ignore
 	$wpdb->delete( qtb_table( 'data' ), array( 'project_id' => (int) $id ) ); // phpcs:ignore
+	delete_transient( 'qtb_lock_' . (int) $id );
+	delete_transient( 'qtb_wslock_' . (int) $id );
 }
 
 /**

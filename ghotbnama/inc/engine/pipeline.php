@@ -62,6 +62,7 @@ function qtb_pipeline_start( $project, $source = 'sheet', $from = 'import', $ext
 		'sub'     => array(),
 		'log'     => array(),
 		'started' => qtb_now(),
+		'touched' => time(),
 		'done'    => false,
 		'error'   => '',
 		'stats'   => array( 'serp_new' => 0, 'serp_cache' => 0, 'ai_cost0' => qtb_ai_usage()['cost'] ),
@@ -142,6 +143,10 @@ function qtb_job_control( $project_id, $key, $action ) {
 		case 'skip':
 			qtb_data_put( $project_id, $key . '_ctl', '' );
 			unset( $job['paused'] );
+			$job['touched'] = time();
+			if ( 'job' === $key ) {
+				qtb_project_status( $project_id, 'running' );
+			}
 			if ( 'skip' === $action ) {
 				$job['skip_serp'] = 1;
 			}
@@ -170,6 +175,33 @@ function qtb_job_stop_asked( $project_id, $key, &$job ) {
 		qtb_job_pause( $job, 'user', 'توسط شما متوقف شد.' );
 	}
 	return true;
+}
+
+/**
+ * A live job nobody is driving (the page was closed, or an old run died) is paused
+ * instead of resuming by itself the next time the page opens.
+ *
+ * @param int $idle Seconds without a slice before the job counts as left alone.
+ * @return array job
+ */
+function qtb_job_settle( $project_id, $key, $idle = 120 ) {
+	$job = qtb_data_get( $project_id, $key, array() );
+	if ( ! $job || ! empty( $job['done'] ) || ! empty( $job['error'] ) || ! empty( $job['paused'] ) ) {
+		return $job;
+	}
+	if ( get_transient( ( 'job' === $key ? 'qtb_lock_' : 'qtb_wslock_' ) . $project_id ) ) {
+		return $job;
+	}
+	$last = (int) ( $job['touched'] ?? strtotime( (string) ( $job['started'] ?? '' ) ) );
+	if ( $last && time() - $last < $idle ) {
+		return $job;
+	}
+	qtb_job_pause( $job, 'stale', 'این اجرا نیمه‌کاره مانده است (صفحه بسته شد یا اجرا قطع شد). «ادامه همین مرحله» یا «لغو» را بزنید.' );
+	qtb_data_put( $project_id, $key, $job );
+	if ( 'job' === $key ) {
+		qtb_project_status( $project_id, 'paused' );
+	}
+	return $job;
 }
 
 /**
@@ -227,6 +259,10 @@ function qtb_pipeline_tick( $project_id, $budget = 20 ) {
 	if ( qtb_job_stop_asked( $project_id, 'job', $job ) && ! empty( $job['error'] ) ) {
 		qtb_project_status( $project_id, 'error' );
 	}
+	if ( ! empty( $job['paused'] ) ) {
+		qtb_project_status( $project_id, 'paused' );
+	}
+	$job['touched'] = time();
 	qtb_data_put( $project_id, 'job', $job );
 	delete_transient( $lock );
 	return $job;

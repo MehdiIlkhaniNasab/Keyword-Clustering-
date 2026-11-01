@@ -64,6 +64,7 @@ body.qtb-app { margin: 0; background: var(--paper); color: var(--ink); font: 14p
 .qtb-dot { width: 8px; height: 8px; border-radius: 50%; background: #1FB57F; flex: none; margin: 0 5px; }
 .qtb-dot.is-running { background: var(--gold); animation: qtb-pulse 1.2s infinite; }
 .qtb-dot.is-error { background: #F07167; }
+.qtb-dot.is-paused { background: var(--gold); }
 .qtb-dot.is-new { background: #6E8F80; }
 @keyframes qtb-pulse { 50% { opacity: .35; } }
 .qtb-nav-add { color: #8FB3A2 !important; }

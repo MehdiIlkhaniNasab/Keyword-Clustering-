@@ -9,7 +9,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-$job     = qtb_data_get( $project['id'], 'job', array() );
+$job     = qtb_job_settle( $project['id'], 'job' );
 $running = $job && empty( $job['done'] ) && empty( $job['error'] ) && empty( $job['paused'] );
 $st      = $job ? qtb_job_status( $job ) : null;
 $meta    = $R['meta'];

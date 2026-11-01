@@ -14,6 +14,19 @@ defined( 'ABSPATH' ) || exit;
 
 $user     = wp_get_current_user();
 $projects = qtb_projects();
+// Runs nobody is driving stop pulsing as «running»: they become «paused» until resumed or cancelled.
+foreach ( $projects as &$sp ) {
+	if ( 'running' === $sp['status'] ) {
+		$sj = qtb_job_settle( $sp['id'], 'job' );
+		if ( ! empty( $sj['paused'] ) ) {
+			$sp['status'] = 'paused';
+		} elseif ( ! $sj || ! empty( $sj['done'] ) || ! empty( $sj['error'] ) ) {
+			$sp['status'] = $sj && ! empty( $sj['done'] ) ? 'ready' : 'error';
+			qtb_project_status( $sp['id'], $sp['status'] );
+		}
+	}
+}
+unset( $sp );
 $cur_pid  = $project ? $project['id'] : 0;
 $link     = function ( $key, $url, $icon, $label ) use ( $nav ) {
 	printf( '<a class="%s" href="%s">%s<span>%s</span></a>', $key === $nav ? 'is-active' : '', esc_url( $url ), qtb_icon( $icon, 18 ), esc_html( $label ) ); // phpcs:ignore

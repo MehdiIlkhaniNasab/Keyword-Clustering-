@@ -100,7 +100,7 @@ function qtb_link( $url, $max = 46 ) {
  * Status dot class of a project.
  */
 function qtb_status_class( $status ) {
-	return array( 'running' => 'is-running', 'error' => 'is-error', 'new' => 'is-new' )[ $status ] ?? '';
+	return array( 'running' => 'is-running', 'paused' => 'is-paused', 'error' => 'is-error', 'new' => 'is-new' )[ $status ] ?? '';
 }
 
 /**

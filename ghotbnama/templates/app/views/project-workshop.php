@@ -10,8 +10,21 @@
 defined( 'ABSPATH' ) || exit;
 
 $ws    = qtb_ws_get( $project['id'] );
-$job   = qtb_data_get( $project['id'], 'ws_job', array() );
+$job   = qtb_job_settle( $project['id'], 'ws_job' );
 $kws   = qtb_data_get( $project['id'], 'keywords', array() );
+// A topic left «running» by a job that is no longer alive goes back to its last state.
+$live_tid = $job && empty( $job['done'] ) && empty( $job['error'] ) && 'topic' === ( $job['action'] ?? '' ) ? (int) $job['tid'] : 0;
+$fixed    = false;
+foreach ( $ws['topics'] as &$wt ) {
+	if ( 'running' === $wt['status'] && (int) $wt['id'] !== $live_tid ) {
+		$wt['status'] = $wt['clusters'] ? 'ready' : 'new';
+		$fixed        = true;
+	}
+}
+unset( $wt );
+if ( $fixed ) {
+	qtb_ws_put( $project['id'], $ws );
+}
 $has   = $kws && isset( reset( $kws )['ws'] );
 $step  = sanitize_key( wp_unslash( $_GET['ws'] ?? '' ) ); // phpcs:ignore
 $tid   = absint( $_GET['tid'] ?? 0 ); // phpcs:ignore

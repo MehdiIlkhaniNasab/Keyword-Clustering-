@@ -43,7 +43,8 @@ $vol    = function ( $t ) use ( $kws ) {
 					<?php if ( $t['clusters'] ) : ?><br><span class="qtb-small qtb-muted"><?php echo esc_html( qtb_num( count( $t['clusters'] ) ) ); ?> کلاستر</span><?php endif; ?></td>
 				<td class="num"><?php echo esc_html( qtb_num( count( $t['kws'] ) ) ); ?></td>
 				<td class="num"><?php echo esc_html( qtb_num( $vol( $t ) ) ); ?></td>
-				<td><span class="qtb-chip is-ts-<?php echo esc_attr( $t['status'] ); ?>"><?php echo esc_html( $states[ $t['status'] ] ?? $t['status'] ); ?></span></td>
+				<td><span class="qtb-chip is-ts-<?php echo esc_attr( $t['status'] ); ?>"><?php echo esc_html( $states[ $t['status'] ] ?? $t['status'] ); ?></span>
+					<?php if ( ! empty( $t['fresh'] ) ) : ?><span class="qtb-chip is-fresh" title="کلمات جدید این موضوع هنوز خوشه‌بندی نشده‌اند؛ «پردازش دوباره» را بزنید">+<?php echo esc_html( qtb_num( $t['fresh'] ) ); ?> جدید</span><?php endif; ?></td>
 				<td><select data-qtb-tmode="<?php echo esc_attr( $t['id'] ); ?>" style="width:auto;min-height:32px;padding:2px 8px 2px 26px"><?php qtb_options( array( 'batch' => 'دسته‌ای', 'single' => 'تک‌تک' ), $t['mode'] ); ?></select></td>
 				<td class="qtb-small"><?php echo $m ? esc_html( sprintf( '%s · %s ثانیه · %s دلار · هوش مصنوعی %s تغییر · شما %s تغییر', 'single' === $m['mode'] ? 'تک‌تک' : 'دسته‌ای', qtb_num( $m['seconds'] ), qtb_num( $m['ai_cost'], 3 ), qtb_num( $m['ai_changes'] ), qtb_num( $m['user_changes'] ?? 0 ) ) ) : '—'; ?></td>
 				<td class="qtb-nowrap">
@@ -86,3 +87,4 @@ $vol    = function ( $t ) use ( $kws ) {
 	</div>
 	<?php qtb_view( 'ws-rules', array( 'project' => $project, 'ws' => $ws ) ); ?>
 </div>
+<?php qtb_view( 'ws-add', array( 'project' => $project ) ); ?>

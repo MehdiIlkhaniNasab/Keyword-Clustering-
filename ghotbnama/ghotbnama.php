@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       قطب‌نما — Ghotbnama by Ronagh
  * Description:       قطب‌نما، کیورد کلاسترینگ هوشمند و فروش‌محور: پاک‌سازی کلمات، حذف برند رقبا، خوشه‌بندی بر اساس ۱۰ نتیجه اول گوگل، تشخیص نیت و نوع صفحه، کشف شکاف محتوایی و کنیبالیزیشن، اولویت‌بندی بر اساس بازگشت سرمایه، خروجی کیورد ریسرچ اکسل/گوگل شیت و ساخت تقویم محتوا.
- * Version:           2.0.3
+ * Version:           2.1.0
  * Requires at least: 6.4
  * Requires PHP:      8.0
  * Author:            Mehdi Ilkhani Nasab
@@ -14,7 +14,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-const QTB_VERSION    = '2.0.3';
+const QTB_VERSION    = '2.1.0';
 const QTB_DB_VERSION = '2';
 const QTB_CAP        = 'qtb_manage';
 const QTB_CAP_REVIEW = 'qtb_review'; // SEO team reviewers: the workshop only.
@@ -33,6 +33,7 @@ foreach ( array(
 	'models/data',
 	'connectors/google',
 	'connectors/sheets',
+	'connectors/import',
 	'connectors/llm',
 	'connectors/serp',
 	'connectors/store',
@@ -50,6 +51,7 @@ foreach ( array(
 	'engine/edit',
 	'engine/workshop-ai',
 	'engine/workshop',
+	'engine/workshop-add',
 	'export/xlsx',
 	'export/xlsx-reader',
 	'export/workbooks',

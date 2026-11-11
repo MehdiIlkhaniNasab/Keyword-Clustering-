@@ -308,7 +308,7 @@
 	// ---- Workshop ----
 	var wsj = $( '[data-qtb-wsjob]' );
 	var wsPid = wsj ? wsj.getAttribute( 'data-qtb-wsjob' ) : null;
-	var wsNames = { triage: 'غربال کلمات', topics: 'تقسیم موضوعی', topic: 'پردازش موضوع' };
+	var wsNames = { triage: 'غربال کلمات', topics: 'تقسیم موضوعی', topic: 'پردازش موضوع', add: 'افزودن کلمات جدید' };
 	var kinds = { remove: 'حذف', keep: 'نگه‌داشتن', park: 'پارکینگ', page: 'نوع صفحه', note: 'دستور' };
 
 	function apiGet( path, params ) {
@@ -336,7 +336,7 @@
 		} ).catch( function ( err ) { toast( err.message, true ); return null; } );
 	}
 	function wsBusy( on ) {
-		$$( '[data-qtb-wsgo], [data-qtb-wsupload] button, [data-qtb-finalize]' ).forEach( function ( b ) { b.disabled = on; } );
+		$$( '[data-qtb-wsgo], [data-qtb-wsupload] button, [data-qtb-wsadd] button, [data-qtb-finalize]' ).forEach( function ( b ) { b.disabled = on; } );
 	}
 	function wsLoop( first ) {
 		wsj.hidden = false;
@@ -352,7 +352,7 @@
 				if ( st.error ) { wsBusy( false ); toast( st.error, true ); return; }
 				if ( st.paused ) { wsBusy( false ); toast( st.paused.msg, 'serp' === st.paused.why ); return; }
 				if ( st.done ) {
-					setTimeout( function () { wsGoto( st.action, 'topic' === st.action ? st.tid : 0 ); }, 900 );
+					setTimeout( function () { wsGoto( 'add' === st.action ? 'topics' : st.action, 'topic' === st.action ? st.tid : 0 ); }, 900 );
 					return;
 				}
 				step( api( 'ws/tick/' + wsPid ) );
@@ -399,6 +399,19 @@
 			wsj.hidden = false;
 			if ( wsj.scrollIntoView ) { wsj.scrollIntoView( { behavior: 'smooth', block: 'start' } ); }
 			wsLoop( api( 'ws/start/' + wsPid, body ) );
+		} );
+		$$( '[data-qtb-wsadd]' ).forEach( function ( f ) {
+			f.addEventListener( 'submit', function ( e ) {
+				e.preventDefault();
+				var fd = new FormData( f );
+				var file = f.querySelector( 'input[type=file]' );
+				if ( ( ! file || ! file.files.length ) && ! String( fd.get( 'text' ) || '' ).trim() ) { toast( 'کلمه‌ای وارد نشده است.', true ); return; }
+				wsBusy( true );
+				api( 'ws/add/' + wsPid, fd, true ).then( function ( d ) {
+					toast( d.msg );
+					if ( d.status ) { wsLoop( Promise.resolve( d.status ) ); } else { wsBusy( false ); }
+				} ).catch( function ( err ) { wsBusy( false ); toast( err.message, true ); } );
+			} );
 		} );
 		$$( '[data-qtb-wsupload]' ).forEach( function ( f ) {
 			f.addEventListener( 'submit', function ( e ) {
@@ -482,7 +495,7 @@
 				var name = window.prompt( 'نام جدید موضوع:', b.getAttribute( 'data-name' ) );
 				if ( name ) { wsEdit( { op: 'topic_rename', tid: +b.getAttribute( 'data-qtb-trename' ), name: name }, 'نام موضوع تغییر کرد' ); }
 			}
-			if ( e.target.closest( '[data-qtb-topicmerge]' ) && window.confirm( 'موضوع‌های انتخاب‌شده ادغام شوند؟ موضوع ادغام‌شده باید دوباره پردازش شود.' ) ) {
+			if ( e.target.closest( '[data-qtb-topicmerge]' ) && window.confirm( 'موضوع‌های انتخاب‌شده در اولی ادغام شوند؟ کلاسترها، قفل‌ها و بخش‌ها حفظ می‌شوند.' ) ) {
 				wsEdit( { op: 'topic_merge', ids: picked() }, 'موضوع‌ها ادغام شدند' );
 			}
 		} );
@@ -522,6 +535,36 @@
 				if ( ! d && optimistic ) { reloadKeepScroll(); }
 			} );
 		};
+
+		// A cluster card dragged by its header to another section.
+		var dragCl = null;
+		bd.addEventListener( 'dragstart', function ( e ) {
+			var h = e.target.closest && e.target.closest( '[data-cldrag]' );
+			if ( ! h || e.target.closest( 'li[data-kw]' ) ) { return; }
+			dragCl = +h.getAttribute( 'data-cldrag' );
+			e.dataTransfer.effectAllowed = 'move';
+			try { e.dataTransfer.setData( 'text/plain', 'cl' + dragCl ); } catch ( x ) {}
+			bd.classList.add( 'is-dragging-cl' );
+		} );
+		bd.addEventListener( 'dragend', function () { dragCl = null; bd.classList.remove( 'is-dragging-cl' ); } );
+		bd.addEventListener( 'dragover', function ( e ) {
+			var z = null !== dragCl && e.target.closest( '[data-secdrop]' );
+			if ( ! z ) { return; }
+			e.preventDefault();
+			$$( '.qtb-bd-sec.is-over', bd ).forEach( function ( x ) { if ( x !== z ) { x.classList.remove( 'is-over' ); } } );
+			z.classList.add( 'is-over' );
+		} );
+		bd.addEventListener( 'drop', function ( e ) {
+			var z = null !== dragCl && e.target.closest( '[data-secdrop]' );
+			if ( ! z ) { return; }
+			e.preventDefault();
+			e.stopPropagation();
+			var cid = dragCl;
+			dragCl = null;
+			var card = $( '.qtb-bd-cl[data-cl="' + cid + '"]', bd );
+			if ( card && card.closest( '.qtb-bd-sec' ) === z ) { z.classList.remove( 'is-over' ); return; }
+			wsEdit( { op: 'section', tid: tid, cid: cid, section: z.getAttribute( 'data-secdrop' ) }, 'کلاستر به بخش دیگر رفت' );
+		}, true );
 
 		// Drag and drop.
 		bd.addEventListener( 'dragstart', function ( e ) {
@@ -706,6 +749,10 @@
 				openMove( t, +t.getAttribute( 'data-qtb-wsmove' ) );
 			} else if ( ( t = e.target.closest( '[data-qtb-ev]' ) ) ) {
 				evidence( +t.getAttribute( 'data-qtb-ev' ) );
+			} else if ( ( t = e.target.closest( '[data-qtb-secrename]' ) ) ) {
+				var from = t.getAttribute( 'data-qtb-secrename' );
+				var to = ( window.prompt( 'نام جدید بخش:', from ) || '' ).trim();
+				if ( to && to !== from ) { wsEdit( { op: 'section_rename', tid: tid, from: from, to: to }, 'نام بخش تغییر کرد' ); }
 			} else if ( ( t = e.target.closest( '[data-qtb-wsrename]' ) ) ) {
 				var h = t.closest( '.qtb-cl' ).querySelector( 'h4' );
 				var name = window.prompt( 'نام جدید کلاستر:', h ? h.textContent : '' );
@@ -731,6 +778,14 @@
 			var t = e.target;
 			if ( t.matches( '[data-qtb-pick]' ) ) { syncPick(); }
 			if ( t.matches( '[data-qtb-tmode]' ) ) { wsEdit( { op: 'mode', tid: tid, mode: t.value }, 'روش بازبینی ذخیره شد', true ); }
+			if ( t.matches( '[data-qtb-wssec]' ) ) {
+				var sec = t.value;
+				if ( '__new' === sec ) {
+					sec = ( window.prompt( 'نام بخش جدید (مثلاً «بر اساس برند» یا «راهنمای خرید»):', '' ) || '' ).trim();
+					if ( ! sec ) { t.selectedIndex = 0; return; }
+				}
+				wsEdit( { op: 'section', tid: tid, cid: +t.getAttribute( 'data-qtb-wssec' ), section: sec }, 'بخش کلاستر تغییر کرد' );
+			}
 			if ( t.matches( '[data-qtb-wspage]' ) ) {
 				wsEdit( { op: 'page', tid: tid, cid: +t.getAttribute( 'data-qtb-wspage' ), page: t.value }, 'نوع صفحه تغییر کرد', true ).then( function ( d ) {
 					if ( ! d ) { return; }

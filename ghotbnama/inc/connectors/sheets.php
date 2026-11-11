@@ -173,6 +173,6 @@ function qtb_sheet_read_keywords( $project ) {
 			return $rows;
 		}
 	}
-	$kws = qtb_rows_to_keywords( $rows );
+	$kws = qtb_import_sheets( array( $tab => $rows ) )['rows'];
 	return $kws ?: new WP_Error( 'qtb_sheet_empty', sprintf( 'در تب «%s» کلمه‌ای پیدا نشد (ستون اول کلمه کلیدی، ستون دوم حجم جستجو).', $tab ) );
 }

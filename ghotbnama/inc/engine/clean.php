@@ -101,8 +101,18 @@ function qtb_clean_run( $project, $input ) {
 			continue;
 		}
 		$key = str_replace( ' ', '', $nk );
+		// The SEO manager's own pillar / section / cluster from the file.
+		$imp = array_filter( array(
+			'p'  => (string) ( $row['p'] ?? '' ),
+			's'  => (string) ( $row['s'] ?? '' ),
+			'c'  => (string) ( $row['c'] ?? '' ),
+			'cn' => (string) ( $row['cn'] ?? '' ),
+		), 'strlen' );
 		if ( isset( $by_key[ $key ] ) ) {
 			$keep = $by_key[ $key ];
+			if ( $imp && ( empty( $keep['imp']['c'] ) || ! empty( $imp['c'] ) && empty( $keep['imp'] ) ) ) {
+				$keep['imp'] = $imp;
+			}
 			// Keep the spelling with the higher volume as the main form.
 			if ( $v > $keep['v'] ) {
 				$removed[]      = array( 'k' => $keep['k'], 'v' => $keep['v'], 'r' => 'duplicate', 'd' => $k );
@@ -120,12 +130,23 @@ function qtb_clean_run( $project, $input ) {
 			continue;
 		}
 		$by_key[ $key ] = array( 'k' => $k, 'v' => $v, 'nk' => $nk, 'key' => $key, 'alts' => array() );
+		if ( $imp ) {
+			$by_key[ $key ]['imp'] = $imp;
+		}
 	}
 
 	$keywords = array();
 	foreach ( $by_key as $kw ) {
 		$nk = $kw['nk'];
 		$e  = '';
+		// Keywords the SEO manager already put in a cluster are never removed by rules.
+		if ( ! empty( $kw['imp']['c'] ) ) {
+			if ( $own && $hit( $nk, $own ) ) {
+				$kw['brand'] = 1;
+			}
+			$keywords[] = $kw;
+			continue;
+		}
 		if ( $own && $hit( $nk, $own ) ) {
 			$kw['brand'] = 1;
 		} elseif ( $comp && ( $e = $hit( $nk, $comp ) ) ) {

@@ -79,7 +79,7 @@ $chip = function ( $i, $c ) use ( $kws, $conf_l, $why_l, $act_l, $names ) {
 	?>
 	<li draggable="true" data-kw="<?php echo esc_attr( $i ); ?>" data-v="<?php echo esc_attr( (int) $kw['v'] ); ?>" data-k="<?php echo esc_attr( $kw['key'] ); ?>" class="is-c-<?php echo esc_attr( $conf ); ?>" title="<?php echo esc_attr( implode( "\n", array_filter( $tip ) ) ); ?>">
 		<?php if ( $c ) : ?><i class="qtb-conf is-<?php echo esc_attr( $conf ); ?>"></i><?php endif; ?>
-		<span><?php echo esc_html( $kw['k'] ); ?></span><?php echo $flag; // phpcs:ignore ?><em><?php echo esc_html( qtb_num( $kw['v'] ) ); ?></em>
+		<span><?php echo esc_html( $kw['k'] ); ?></span><?php echo $flag; // phpcs:ignore ?><?php echo ! empty( $kw['added'] ) && strtotime( $kw['added'] ) > time() - 30 * DAY_IN_SECONDS ? '<b class="qtb-new-tag" title="' . esc_attr( 'اضافه‌شده در ' . qtb_jdate( $kw['added'] ) ) . '">جدید</b>' : ''; ?><em><?php echo esc_html( qtb_num( $kw['v'] ) ); ?></em>
 		<span class="qtb-kw-acts">
 			<button type="button" class="qtb-icon-btn" data-qtb-ev="<?php echo esc_attr( $i ); ?>" title="شواهد گوگل"><?php echo qtb_icon( 'research', 13 ); // phpcs:ignore ?></button>
 			<button type="button" class="qtb-icon-btn" data-qtb-wsmove="<?php echo esc_attr( $i ); ?>" title="انتقال"><?php echo qtb_icon( 'undo', 13 ); // phpcs:ignore ?></button>
@@ -139,13 +139,37 @@ $chip = function ( $i, $c ) use ( $kws, $conf_l, $why_l, $act_l, $names ) {
 		<div class="qtb-drop is-remove" data-drop="remove"><?php echo qtb_icon( 'trash', 16 ); // phpcs:ignore ?> حذف <small>(بی‌ربط / بی‌ارزش)</small></div>
 	</div>
 
+	<?php
+	// Clusters by section (the biggest section first); «بدون بخش» last.
+	$secs = array();
+	foreach ( $t['clusters'] as $c ) {
+		$sn = trim( (string) ( $c['section'] ?? '' ) );
+		if ( ! isset( $secs[ $sn ] ) ) {
+			$secs[ $sn ] = array( 'vol' => 0, 'cls' => array() );
+		}
+		$secs[ $sn ]['vol']   += (int) $c['vol'];
+		$secs[ $sn ]['cls'][]  = $c;
+	}
+	uksort( $secs, function ( $a, $b ) use ( $secs ) {
+		return ( '' === $a ) <=> ( '' === $b ) ?: $secs[ $b ]['vol'] <=> $secs[ $a ]['vol'];
+	} );
+	$sec_names = array_values( array_filter( array_keys( $secs ), 'strlen' ) );
+	?>
+	<div class="qtb-bd-secs" data-sections="<?php echo esc_attr( wp_json_encode( $sec_names, JSON_UNESCAPED_UNICODE ) ); ?>">
+	<?php foreach ( $secs as $sn => $sec ) : ?>
+	<section class="qtb-bd-sec" data-secdrop="<?php echo esc_attr( $sn ); ?>">
+		<div class="qtb-bd-sec-h">
+			<i></i><b><?php echo esc_html( '' !== $sn ? $sn : 'بدون بخش' ); ?></b>
+			<span class="qtb-muted qtb-small"><?php echo esc_html( qtb_num( count( $sec['cls'] ) ) . ' کلاستر · ' . qtb_num( $sec['vol'] ) ); ?></span>
+			<?php if ( '' !== $sn ) : ?><button type="button" class="qtb-icon-btn" data-qtb-secrename="<?php echo esc_attr( $sn ); ?>" title="تغییر نام این بخش"><?php echo qtb_icon( 'edit', 14 ); // phpcs:ignore ?></button><?php endif; ?>
+		</div>
 	<div class="qtb-clusters qtb-bd-grid">
-		<?php foreach ( $t['clusters'] as $c ) : ?>
+		<?php foreach ( $sec['cls'] as $c ) : ?>
 			<div class="qtb-cl qtb-bd-cl<?php echo ! empty( $c['locked'] ) ? ' is-locked' : ''; ?>" data-cl="<?php echo esc_attr( $c['id'] ); ?>" data-drop="<?php echo esc_attr( $c['id'] ); ?>">
-				<div class="qtb-cl-h is-<?php echo esc_attr( $c['page'] ); ?>">
+				<div class="qtb-cl-h is-<?php echo esc_attr( $c['page'] ); ?>" draggable="true" data-cldrag="<?php echo esc_attr( $c['id'] ); ?>" title="برای بردن به بخش دیگر، سرتیتر کارت را بکشید">
 					<div style="min-width:0">
 						<h4><?php echo esc_html( $c['name'] ); ?></h4>
-						<small><?php echo esc_html( qtb_intents()[ $c['intent'] ] ?? '' ); ?><?php echo ! empty( $c['section'] ) ? ' · ' . esc_html( $c['section'] ) : ''; ?></small>
+						<small><?php echo esc_html( qtb_intents()[ $c['intent'] ] ?? '' ); ?></small>
 					</div>
 					<div class="qtb-inline" style="flex-wrap:nowrap">
 						<button type="button" class="qtb-icon-btn" data-qtb-wsrename="<?php echo esc_attr( $c['id'] ); ?>" title="تغییر نام"><?php echo qtb_icon( 'edit', 15 ); // phpcs:ignore ?></button>
@@ -157,6 +181,12 @@ $chip = function ( $i, $c ) use ( $kws, $conf_l, $why_l, $act_l, $names ) {
 					<select data-qtb-wspage="<?php echo esc_attr( $c['id'] ); ?>" style="min-height:24px;padding:0 8px 0 24px;width:auto;font-size:11.5px;border-radius:99px;background-position:left 7px center">
 						<?php qtb_options( qtb_page_options(), qtb_page_value( $c ) ); ?>
 					</select>
+					<select data-qtb-wssec="<?php echo esc_attr( $c['id'] ); ?>" title="بخش" style="min-height:24px;padding:0 8px 0 24px;width:auto;max-width:150px;font-size:11.5px;border-radius:99px;background-position:left 7px center">
+						<?php if ( '' === trim( (string) ( $c['section'] ?? '' ) ) ) : ?><option value="" selected>بدون بخش</option><?php endif; ?>
+						<?php foreach ( $sec_names as $o ) : ?><option value="<?php echo esc_attr( $o ); ?>" <?php selected( trim( (string) ( $c['section'] ?? '' ) ), $o ); ?>><?php echo esc_html( $o ); ?></option><?php endforeach; ?>
+						<option value="__new">+ بخش جدید…</option>
+					</select>
+					<?php if ( ! empty( $c['own'] ) ) : ?><span class="qtb-chip is-own" title="از فایل شما؛ قفل است و دوباره خوشه‌بندی نمی‌شود. برای خوشه‌بندی دوباره، قفل را باز کنید و «پردازش دوباره» بزنید.">کلاستر شما</span><?php endif; ?>
 					<?php if ( ! empty( $c['page_ai'] ) ) : ?><span class="qtb-chip is-ai" title="<?php echo esc_attr( 'پیشنهاد اولیه قانون‌محور: ' . ( qtb_page_options()[ $c['page_ai']['from'] ] ?? $c['page_ai']['from'] ) ); ?>">نوع صفحه با هوش مصنوعی</span><?php endif; ?>
 					<?php if ( $c['serp'] ) : ?>
 						<span class="qtb-chip is-serp" title="<?php echo esc_attr( 'نوع نتایج: ' . implode( '، ', array_map( function ( $k, $v ) { return $k . ' ' . round( 100 * $v ) . '٪'; }, array_keys( (array) $c['serp']['types'] ), (array) $c['serp']['types'] ) ) ); ?>">گوگل ✓<?php echo ! empty( $c['serp']['own_pos'] ) ? ' · جایگاه ' . esc_html( qtb_num( $c['serp']['own_pos'] ) ) : ''; ?></span>
@@ -175,10 +205,13 @@ $chip = function ( $i, $c ) use ( $kws, $conf_l, $why_l, $act_l, $names ) {
 				<div class="qtb-cl-foot"><span>جمع <b data-vol><?php echo esc_html( qtb_num( $c['vol'] ) ); ?></b> · <span data-n><?php echo esc_html( qtb_num( count( $c['kws'] ) ) ); ?></span> کلمه</span></div>
 			</div>
 		<?php endforeach; ?>
-		<?php if ( ! $t['clusters'] ) : ?>
-			<p class="qtb-muted">این موضوع هنوز پردازش نشده است.</p>
-		<?php endif; ?>
 	</div>
+	</section>
+	<?php endforeach; ?>
+	</div>
+	<?php if ( ! $t['clusters'] ) : ?>
+		<p class="qtb-muted">این موضوع هنوز پردازش نشده است.</p>
+	<?php endif; ?>
 
 	<div class="qtb-grid-2" style="gap:16px;margin-top:16px;align-items:start">
 		<div class="qtb-panel">

@@ -131,16 +131,16 @@ function qtb_rest_upload( $req ) {
 	if ( (int) $f['size'] > 20 * MB_IN_BYTES ) {
 		return new WP_Error( 'qtb_upload', 'حجم فایل بیش از ۲۰ مگابایت است.', array( 'status' => 400 ) );
 	}
-	$rows = qtb_read_keyword_file( $f['tmp_name'], (string) $f['name'], (string) $p['cfg']['input_tab'] );
-	if ( is_wp_error( $rows ) ) {
-		return $rows;
+	$imp = qtb_import_file( $f['tmp_name'], (string) $f['name'] );
+	if ( is_wp_error( $imp ) ) {
+		$imp->add_data( array( 'status' => 400 ) );
+		return $imp;
 	}
-	$kws = qtb_rows_to_keywords( $rows );
-	if ( ! $kws ) {
-		return new WP_Error( 'qtb_upload', 'در فایل کلمه‌ای پیدا نشد (ستون اول کلمه کلیدی، ستون دوم حجم جستجو).', array( 'status' => 400 ) );
+	if ( ! $imp['rows'] ) {
+		return new WP_Error( 'qtb_upload', 'در فایل کلمه‌ای پیدا نشد (ستون اول کلمه کلیدی، ستون دوم حجم جستجو؛ یا شیت‌هایی به سبک کیورد ریسرچ: عنوان بخش بالا و زیرش ستون‌های کلمه | حجم).', array( 'status' => 400 ) );
 	}
-	qtb_data_put( $p['id'], 'input', $kws );
-	return array( 'ok' => true, 'count' => count( $kws ), 'msg' => sprintf( '%s کلمه از فایل خوانده شد.', qtb_num( count( $kws ) ) ) );
+	qtb_data_put( $p['id'], 'input', $imp['rows'] );
+	return array( 'ok' => true, 'count' => count( $imp['rows'] ), 'clusters' => $imp['clusters'], 'msg' => qtb_import_summary( $imp ) );
 }
 
 /**
@@ -284,6 +284,7 @@ add_action( 'rest_api_init', function () {
 		return qtb_can();
 	};
 	register_rest_route( $ns, '/ws/start/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_start', 'permission_callback' => $rev ) );
+	register_rest_route( $ns, '/ws/add/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_add', 'permission_callback' => $mng ) );
 	register_rest_route( $ns, '/ws/control/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_control', 'permission_callback' => $rev ) );
 	register_rest_route( $ns, '/ws/tick/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_tick', 'permission_callback' => $rev ) );
 	register_rest_route( $ns, '/ws/edit/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_edit', 'permission_callback' => $rev ) );
@@ -305,7 +306,7 @@ function qtb_rest_ws_start( $req ) {
 		return new WP_Error( 'qtb_ws_busy', 'یک کار دیگر در حال اجراست؛ صبر کنید تا تمام شود.', array( 'status' => 409 ) );
 	}
 	$action = (string) $req['action'];
-	if ( ! in_array( $action, array( 'triage', 'topics', 'topic' ), true ) ) {
+	if ( ! in_array( $action, array( 'triage', 'topics', 'topic', 'add' ), true ) ) {
 		return new WP_Error( 'qtb_ws', 'کار نامعتبر.', array( 'status' => 400 ) );
 	}
 	// Rebuilding the keyword list or the topics resets the review: managers only.
@@ -333,6 +334,46 @@ function qtb_rest_ws_start( $req ) {
 	}
 	qtb_ws_start( $p, $action, $args );
 	return qtb_ws_job_status( qtb_ws_tick( $p['id'], 18 ) );
+}
+
+/**
+ * New keywords for a running project (file or pasted lines) → triage and topics of only them.
+ */
+function qtb_rest_ws_add( $req ) {
+	$p = qtb_rest_project( $req );
+	if ( is_wp_error( $p ) ) {
+		return $p;
+	}
+	$cur = qtb_data_get( $p['id'], 'ws_job', array() );
+	if ( $cur && empty( $cur['done'] ) && empty( $cur['error'] ) && empty( $cur['paused'] ) && ! empty( $cur['started'] ) && strtotime( $cur['started'] ) > time() - 1800 ) {
+		return new WP_Error( 'qtb_ws_busy', 'یک کار دیگر در حال اجراست؛ صبر کنید تا تمام شود.', array( 'status' => 409 ) );
+	}
+	$files = $req->get_file_params();
+	$f     = $files['file'] ?? null;
+	if ( $f && empty( $f['error'] ) && ! empty( $f['tmp_name'] ) ) {
+		$imp = qtb_import_file( $f['tmp_name'], (string) $f['name'] );
+		if ( is_wp_error( $imp ) ) {
+			$imp->add_data( array( 'status' => 400 ) );
+			return $imp;
+		}
+		$rows = $imp['rows'];
+	} else {
+		$rows = qtb_text_to_rows( (string) $req['text'] );
+	}
+	if ( ! $rows ) {
+		return new WP_Error( 'qtb_ws_add', 'کلمه‌ای پیدا نشد. هر خط یک کلمه، و حجم بعد از تب یا کاما.', array( 'status' => 400 ) );
+	}
+	$res = qtb_ws_add_rows( $p, $rows );
+	if ( is_wp_error( $res ) ) {
+		$res->add_data( array( 'status' => 400 ) );
+		return $res;
+	}
+	$msg = sprintf( '%s کلمه جدید اضافه شد؛ %s تکراری کنار رفت؛ %s با قوانین حذف شد.', qtb_num( $res['added'] ), qtb_num( $res['dup'] ), qtb_num( $res['removed'] ) );
+	if ( ! $res['added'] ) {
+		return array( 'msg' => $msg, 'status' => null );
+	}
+	qtb_ws_start( $p, 'add' );
+	return array( 'msg' => $msg, 'status' => qtb_ws_job_status( qtb_ws_tick( $p['id'], 18 ) ) );
 }
 
 /**

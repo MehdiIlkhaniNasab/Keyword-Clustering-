@@ -153,6 +153,7 @@ function qtb_ws_steps( $action ) {
 	$s = array(
 		'triage' => array( 'import' => 'دریافت کلمات', 'clean' => 'پاک‌سازی قانونی', 'inventory' => 'خواندن محصولات و صفحات سایت', 'ai' => 'غربال هوشمند (نگه دار / حذف / نیاز به تصمیم)' ),
 		'topics' => array( 'groups' => 'گروه‌بندی زبانی', 'ai' => 'تقسیم موضوعی هوشمند', 'build' => 'ساخت موضوع‌ها' ),
+		'add'    => array( 'ai' => 'غربال هوشمند کلمات جدید', 'assign' => 'پیدا کردن موضوع هر کلمه جدید' ),
 		'topic'  => array( 'serp' => 'بررسی ۱۰ نتیجه اول گوگل همه کلمات', 'cluster' => 'خوشه‌بندی بر اساس اشتراک نتایج', 'ai_kw' => 'بازبینی هوشمند تک‌تک کلمات', 'ai_cl' => 'بازبینی نوع صفحه و نام کلاسترها', 'finish' => 'جمع‌بندی' ),
 	);
 	return $s[ $action ] ?? array();
@@ -269,12 +270,21 @@ function qtb_ws_triage_clean( $project, &$job ) {
 	$job['log'] = array_merge( $job['log'], $pj['log'] );
 	$kws        = qtb_data_get( $project['id'], 'keywords', array() );
 	qtb_annotate( $kws );
+	$own = 0;
 	foreach ( $kws as &$kw ) {
 		$kw['ws'] = 'keep';
 		$kw['tr'] = 'ok';
 		$kw['tn'] = '';
+		if ( ! empty( $kw['imp']['c'] ) ) {
+			$kw['tl'] = 1;
+			$kw['tn'] = 'در کلاستر شما';
+			++$own;
+		}
 	}
 	unset( $kw );
+	if ( $own ) {
+		qtb_job_log( $job, sprintf( '%s کلمه در کلاسترهای آماده شما بود؛ این‌ها غربال و خوشه‌بندی دوباره نمی‌شوند.', qtb_num( $own ) ) );
+	}
 	$ws = qtb_ws_get( $project['id'] );
 	$n  = qtb_ws_apply_rules( $kws, $ws['rules'] );
 	if ( $n ) {
@@ -312,7 +322,7 @@ function qtb_ws_triage_ai( $project, &$job, $deadline ) {
 	$kws  = qtb_data_get( $project['id'], 'keywords', array() );
 	$ws   = qtb_ws_get( $project['id'] );
 	$todo = array_values( array_filter( $kws, function ( $kw ) {
-		return empty( $kw['tl'] ) && 'rule' !== ( $kw['tr'] ?? '' );
+		return empty( $kw['tl'] ) && 'rule' !== ( $kw['tr'] ?? '' ) && ( empty( $job['only_new'] ) || ! empty( $kw['fresh'] ) );
 	} ) );
 	$off  = (int) ( $job['sub']['off'] ?? 0 );
 	while ( $off < count( $todo ) ) {
@@ -368,7 +378,53 @@ function qtb_ws_topics_groups( $project, &$job ) {
 	if ( ! $active ) {
 		return new WP_Error( 'qtb_ws_empty', 'هیچ کلمه نگه‌داشته‌ای نیست؛ در مرحله غربال کلمات را بررسی کنید.' );
 	}
-	$groups = qtb_precluster( $active, array( 'brands' => array_merge( (array) $project['cfg']['brands'], (array) $project['cfg']['competitors'] ) ) );
+	// The SEO manager's own clusters stay whole; the rest is grouped by words.
+	$own  = array();
+	$rest = array();
+	foreach ( $active as $i => $kw ) {
+		if ( ! empty( $kw['imp']['c'] ) ) {
+			$own[ $kw['imp']['c'] ][] = $i;
+		} else {
+			$rest[ $i ] = $kw;
+		}
+	}
+	$groups = $rest ? qtb_precluster( $rest, array( 'brands' => array_merge( (array) $project['cfg']['brands'], (array) $project['cfg']['competitors'] ) ) ) : array();
+	foreach ( $own as $ck => $members ) {
+		$g        = qtb_group_make( $active, $members );
+		$g['imp'] = $ck;
+		$groups[] = $g;
+	}
+	// New keywords that share words with the manager's clusters belong to the same pillar.
+	$hint = array();
+	if ( $own && $rest ) {
+		foreach ( qtb_precluster( $active, array( 'brands' => array_merge( (array) $project['cfg']['brands'], (array) $project['cfg']['competitors'] ) ) ) as $lg ) {
+			$ps = array();
+			foreach ( $lg['kws'] as $m ) {
+				if ( ! empty( $kws[ $m ]['imp']['p'] ) ) {
+					$ps[ $kws[ $m ]['imp']['p'] ] = ( $ps[ $kws[ $m ]['imp']['p'] ] ?? 0 ) + 1;
+				}
+			}
+			if ( $ps ) {
+				arsort( $ps );
+				foreach ( $lg['kws'] as $m ) {
+					$hint[ $m ] = (string) key( $ps );
+				}
+			}
+		}
+	}
+	// Pillar from the file (the most common one among the members).
+	foreach ( $groups as &$g ) {
+		$ps = array();
+		foreach ( $g['kws'] as $m ) {
+			$mp = (string) ( $kws[ $m ]['imp']['p'] ?? ( $hint[ $m ] ?? '' ) );
+			if ( '' !== $mp ) {
+				$ps[ $mp ] = ( $ps[ $mp ] ?? 0 ) + 1;
+			}
+		}
+		arsort( $ps );
+		$g['p'] = $ps ? (string) key( $ps ) : '';
+	}
+	unset( $g );
 	$groups = qtb_sort( $groups, 'vol' );
 	foreach ( $groups as $gi => &$g ) {
 		$g['gid'] = $gi;
@@ -399,13 +455,15 @@ function qtb_ws_topics_ai( $project, &$job, $deadline ) {
 	$groups = qtb_data_get( $project['id'], 'ws_groups', array() );
 	$ws     = qtb_ws_get( $project['id'] );
 	if ( ! isset( $job['sub']['order'] ) ) {
-		$order = array_keys( $groups );
+		$order = array_values( array_filter( array_keys( $groups ), function ( $gi ) use ( $groups ) {
+			return '' === ( $groups[ $gi ]['p'] ?? '' );
+		} ) );
 		usort( $order, function ( $a, $b ) use ( $groups ) {
 			return strcmp( $groups[ $a ]['free'], $groups[ $b ]['free'] ) ?: ( $groups[ $b ]['vol'] <=> $groups[ $a ]['vol'] );
 		} );
 		$job['sub']['order'] = $order;
 		$job['sub']['off']   = 0;
-		$job['sub']['known'] = array();
+		$job['sub']['known'] = array_values( array_unique( array_filter( array_column( $groups, 'p' ) ) ) );
 		$job['sub']['map']   = array();
 	}
 	$order = $job['sub']['order'];
@@ -463,19 +521,26 @@ function qtb_ws_topics_build( $project, &$job ) {
 		}
 	}
 	$topics = array();
+	$fixed = array(); // Pillars from the file are never folded away.
 	foreach ( $groups as $g ) {
-		$name = $map[ $g['gid'] ] ?? $fname[ $g['free'] ];
+		$name = '' !== ( $g['p'] ?? '' ) ? $g['p'] : ( $map[ $g['gid'] ] ?? $fname[ $g['free'] ] );
 		if ( ! isset( $topics[ $name ] ) ) {
-			$topics[ $name ] = array( 'kws' => array(), 'vol' => 0 );
+			$topics[ $name ] = array( 'kws' => array(), 'vol' => 0, 'own' => array() );
 		}
 		$topics[ $name ]['kws'] = array_merge( $topics[ $name ]['kws'], $g['kws'] );
 		$topics[ $name ]['vol'] += $g['vol'];
+		if ( ! empty( $g['imp'] ) ) {
+			$topics[ $name ]['own'][] = $g;
+		}
+		if ( '' !== ( $g['p'] ?? '' ) || ! empty( $g['imp'] ) ) {
+			$fixed[ $name ] = 1;
+		}
 	}
 	// Tiny topics (≤ 3 keywords) go to «متفرقه».
 	foreach ( $topics as $name => $t ) {
-		if ( count( $t['kws'] ) <= 3 && 'متفرقه' !== $name && count( $topics ) > 3 ) {
+		if ( count( $t['kws'] ) <= 3 && 'متفرقه' !== $name && count( $topics ) > 3 && ! isset( $fixed[ $name ] ) ) {
 			if ( ! isset( $topics['متفرقه'] ) ) {
-				$topics['متفرقه'] = array( 'kws' => array(), 'vol' => 0 );
+				$topics['متفرقه'] = array( 'kws' => array(), 'vol' => 0, 'own' => array() );
 			}
 			$topics['متفرقه']['kws'] = array_merge( $topics['متفرقه']['kws'], $t['kws'] );
 			$topics['متفرقه']['vol'] += $t['vol'];
@@ -486,8 +551,17 @@ function qtb_ws_topics_build( $project, &$job ) {
 		return $b['vol'] <=> $a['vol'];
 	} );
 	$ws['topics'] = array();
+	$own_n        = 0;
 	foreach ( $topics as $name => $t ) {
-		$ws['topics'][] = qtb_ws_new_topic( $ws, $name, $t['kws'], $project );
+		$topic = qtb_ws_new_topic( $ws, $name, $t['kws'], $project );
+		if ( $t['own'] ) {
+			$topic   = qtb_ws_topic_with_own( $project, $ws, $kws, $topic, $t['own'] );
+			$own_n  += count( $t['own'] );
+		}
+		$ws['topics'][] = $topic;
+	}
+	if ( $own_n ) {
+		qtb_job_log( $job, sprintf( '%s کلاستر آماده شما با همان بخش‌ها وارد موضوع‌ها شد (قفل).', qtb_num( $own_n ) ) );
 	}
 	$ws['stage'] = 'topics';
 	qtb_ws_put( $project['id'], $ws );
@@ -513,6 +587,50 @@ function qtb_ws_new_topic( &$ws, $name, $kws, $project ) {
 	);
 }
 
+/**
+ * The SEO manager's own clusters of a topic: locked, with their section; a topic made
+ * only of them is ready for review right away.
+ */
+function qtb_ws_topic_with_own( $project, &$ws, $kws, $topic, $own ) {
+	$in = array();
+	foreach ( $own as $g ) {
+		$sec  = '';
+		$name = '';
+		foreach ( $g['kws'] as $m ) {
+			$sec  = $sec ?: (string) ( $kws[ $m ]['imp']['s'] ?? '' );
+			$name = $name ?: (string) ( $kws[ $m ]['imp']['cn'] ?? '' );
+		}
+		$g['meta'] = array_fill_keys( $g['kws'], array( 'conf' => 'high', 'shared' => -1, 'alt' => null, 'alt_shared' => 0, 'why' => 'user' ) );
+		$c         = qtb_ws_make_cluster( $ws, $kws, $g, array(), '' );
+		$c['locked'] = 1;
+		$c['own']    = 1;
+		if ( '' !== $name ) {
+			$c['name']        = $name;
+			$c['locked_name'] = 1;
+		}
+		if ( '' !== $sec ) {
+			$c['section']        = $sec;
+			$c['locked_section'] = 1;
+			// The section title says the page: «وبلاگ / مقالات» → article, «لندینگ» → landing.
+			$sp = preg_match( '/وبلاگ|بلاگ|مقاله|مقالات|blog|آموزش|راهنما/iu', $sec ) ? 'article' : ( preg_match( '/لندینگ|landing/iu', $sec ) ? 'landing' : '' );
+			if ( '' !== $sp ) {
+				$c['page']        = $sp;
+				$c['archive']     = '';
+				$c['locked_page'] = 1;
+				$c['page_reason'] = 'بخش «' . $sec . '» در فایل شما';
+			}
+		}
+		$topic['clusters'][] = $c;
+		$in                  = array_merge( $in, $g['kws'] );
+	}
+	$topic['clusters'] = qtb_ws_decide_pages( $project, $ws, $kws, $topic['clusters'] );
+	$topic['clusters'] = qtb_ws_tidy( $kws, $topic['clusters'] );
+	if ( ! array_diff( $topic['kws'], $in ) ) {
+		$topic['status'] = 'ready';
+	}
+	return $topic;
+}
+
 // ---------------------------------------------------------------------------
 // 3. One topic.
 // ---------------------------------------------------------------------------
@@ -530,8 +648,17 @@ function qtb_ws_topic_serp( $project, &$job, $deadline ) {
 	$kws = qtb_data_get( $project['id'], 'keywords', array() );
 	if ( ! isset( $job['sub']['todo'] ) ) {
 		$serps = qtb_data_get( $project['id'], 'serps', array() );
-		$want  = array_values( array_filter( $t['kws'], function ( $i ) use ( $serps, $kws ) {
-			return isset( $kws[ $i ] ) && ! isset( $serps[ $i ] );
+		// Locked clusters (yours, or already reviewed) need only their top members, to compare new keywords with.
+		$skip = array();
+		foreach ( $t['clusters'] as $c ) {
+			if ( ! empty( $c['locked'] ) ) {
+				foreach ( array_slice( $c['kws'], 3 ) as $i ) {
+					$skip[ $i ] = 1;
+				}
+			}
+		}
+		$want  = array_values( array_filter( $t['kws'], function ( $i ) use ( $serps, $kws, $skip ) {
+			return isset( $kws[ $i ] ) && ! isset( $serps[ $i ] ) && ! isset( $skip[ $i ] ) && in_array( $kws[ $i ]['ws'] ?? 'keep', array( 'keep', 'unsure' ), true );
 		} ) );
 		$hit   = qtb_serp_cached_many( array_map( function ( $i ) use ( $kws ) {
 			return $kws[ $i ]['k'];
@@ -551,10 +678,10 @@ function qtb_ws_topic_serp( $project, &$job, $deadline ) {
 		} );
 		$job['sub']['todo']  = array_slice( $todo, 0, max( 0, $cap ) );
 		$job['sub']['pos']   = 0;
-		$job['sub']['cache'] = count( $t['kws'] ) - count( $todo );
+		$job['sub']['cache'] = count( $want ) - count( $todo );
 		$job['sub']['new']   = 0;
 		qtb_data_put( $project['id'], 'serps', $serps );
-		qtb_job_log( $job, sprintf( '%s کلمه: %s از کش، %s درخواست جدید.', qtb_num( count( $t['kws'] ) ), qtb_num( $job['sub']['cache'] ), qtb_num( count( $job['sub']['todo'] ) ) ) );
+		qtb_job_log( $job, sprintf( '%s کلمه نیاز به نتایج گوگل دارد%s: %s از کش، %s درخواست جدید.', qtb_num( count( $want ) ), $skip ? sprintf( ' (%s کلمه کلاسترهای قفل نیازی ندارند)', qtb_num( count( $skip ) ) ) : '', qtb_num( $job['sub']['cache'] ), qtb_num( count( $job['sub']['todo'] ) ) ) );
 	}
 	$serps = qtb_data_get( $project['id'], 'serps', array() );
 	$todo  = $job['sub']['todo'];
@@ -686,7 +813,7 @@ function qtb_ws_make_cluster( &$ws, $kws, $g, $serps, $own, $prev = null ) {
 		'archive' => 'category',
 		'locked'  => $prev ? 1 : 0,
 	);
-	foreach ( array( 'locked_name', 'locked_page', 'page', 'archive', 'page_reason', 'section', 'note' ) as $k ) {
+	foreach ( array( 'locked_name', 'locked_page', 'locked_section', 'own', 'page', 'archive', 'page_reason', 'section', 'note' ) as $k ) {
 		if ( $prev && isset( $prev[ $k ] ) && ( 'page' !== $k && 'archive' !== $k && 'page_reason' !== $k || ! empty( $prev['locked_page'] ) ) ) {
 			$c[ $k ] = $prev[ $k ];
 		}
@@ -1050,6 +1177,7 @@ function qtb_ws_topic_finish( $project, &$job ) {
 		'user_changes' => 0,
 	);
 	$t['status']         = 'ready';
+	$t['fresh']          = 0;
 	$ws['topics'][ $ti ] = $t;
 	$ws['stage']         = 'review';
 	qtb_ws_put( $pid, $ws );
@@ -1142,15 +1270,21 @@ function qtb_ws_edit( $project, $e ) {
 		if ( null === $ki || count( $ids ) < 2 ) {
 			return new WP_Error( 'qtb_ws', 'حداقل دو موضوع انتخاب کنید.' );
 		}
+		$unproc = 'new' === $ws['topics'][ $ki ]['status'];
 		foreach ( array_slice( $ids, 1 ) as $id ) {
 			$oi = qtb_ws_topic_index( $ws, $id );
 			if ( null !== $oi && $oi !== $ki ) {
-				$ws['topics'][ $ki ]['kws'] = array_merge( $ws['topics'][ $ki ]['kws'], $ws['topics'][ $oi ]['kws'] );
-				$ws['topics'][ $oi ]['kws'] = array();
+				// Clusters (and their locks and sections) come along; nothing reviewed is lost.
+				$ws['topics'][ $ki ]['kws']      = array_values( array_unique( array_merge( $ws['topics'][ $ki ]['kws'], $ws['topics'][ $oi ]['kws'] ) ) );
+				$ws['topics'][ $ki ]['clusters'] = array_merge( $ws['topics'][ $ki ]['clusters'], $ws['topics'][ $oi ]['clusters'] );
+				$ws['topics'][ $ki ]['fresh']    = (int) ( $ws['topics'][ $ki ]['fresh'] ?? 0 ) + (int) ( $ws['topics'][ $oi ]['fresh'] ?? 0 );
+				$unproc                          = $unproc || 'new' === $ws['topics'][ $oi ]['status'];
+				$ws['topics'][ $oi ]['kws']      = array();
 			}
 		}
-		$ws['topics'][ $ki ]['status']   = 'new';
-		$ws['topics'][ $ki ]['clusters'] = array();
+		$ws['topics'][ $ki ]['clusters'] = qtb_ws_tidy( $kws, $ws['topics'][ $ki ]['clusters'] );
+		// Keywords not in any cluster yet (an unprocessed topic) need a processing run.
+		$ws['topics'][ $ki ]['status'] = $ws['topics'][ $ki ]['clusters'] && ! $unproc ? 'ready' : 'new';
 		$ws['topics'] = array_values( array_filter( $ws['topics'], function ( $t ) {
 			return ! empty( $t['kws'] );
 		} ) );
@@ -1296,6 +1430,29 @@ function qtb_ws_edit( $project, $e ) {
 			break;
 		case 'mode':
 			$t['mode'] = 'single' === ( $e['mode'] ?? '' ) ? 'single' : 'batch';
+			break;
+		case 'section': // {cid, section}: the cluster moves to another (or a new) section.
+			$ci = $cl( $e['cid'] ?? -1 );
+			if ( null === $ci ) {
+				return new WP_Error( 'qtb_ws', 'کلاستر پیدا نشد.' );
+			}
+			$t['clusters'][ $ci ]['section']        = qtb_mb_cut( sanitize_text_field( (string) ( $e['section'] ?? '' ) ), 50 );
+			$t['clusters'][ $ci ]['locked_section'] = 1;
+			$t['clusters'][ $ci ]['locked']         = 1;
+			break;
+		case 'section_rename': // {from, to}: every cluster of the section.
+			$from = trim( (string) ( $e['from'] ?? '' ) );
+			$to   = qtb_mb_cut( sanitize_text_field( (string) ( $e['to'] ?? '' ) ), 50 );
+			if ( '' === $from || '' === $to ) {
+				return new WP_Error( 'qtb_ws', 'نام بخش خالی است.' );
+			}
+			foreach ( $t['clusters'] as &$c ) {
+				if ( trim( (string) ( $c['section'] ?? '' ) ) === $from ) {
+					$c['section']        = $to;
+					$c['locked_section'] = 1;
+				}
+			}
+			unset( $c );
 			break;
 		case 'topic_rename':
 			$t['name'] = qtb_mb_cut( sanitize_text_field( (string) $e['name'] ), 40 );

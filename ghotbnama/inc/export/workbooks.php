@@ -1,16 +1,13 @@
 <?php
 /**
- * Workbook models of the two deliverables (rendered to XLSX and to Google Sheets):
+ * Workbook models (rendered to XLSX and to Google Sheets).
  *
- *   Keyword research — dashboard, one sheet per pillar in the Delna layout
- *   (section headers, one 2-column block per cluster: keyword | volume, total
- *   row; green = main landing, blue = category / product landing, yellow =
- *   blog), keyword map, clusters, content gaps, cannibalization, competitors,
- *   more ideas (People Also Ask), taxonomy and removed keywords.
+ *   Keyword research — the deliverable: a summary, one sheet per pillar in the
+ *   research layout (section bands, one «keyword | volume» block per page, the
+ *   main keyword first, the total under it; one calm color per page type), the
+ *   page map (each page with all its keywords) and removed / parked keywords.
  *
- *   Content calendar — Calendar (M1, M2… with Writing Guide, Out Links, In
- *   Links, Status, Publish Date, Link), Ideas, B keyword (keyword cloud of each
- *   article) and Briefs.
+ *   Content calendar — kept for the API, no longer part of the main output.
  *
  * @package Ghotbnama
  */
@@ -152,318 +149,352 @@ function qtb_cluster_action( $c ) {
 }
 
 /**
- * Keyword research workbook.
+ * Design tokens of the deliverable: deep forest, warm gold, and one calm tone per page type.
+ */
+function qtb_xd( $key ) {
+	$d = array(
+		'forest'  => '0B3B2E',
+		'forest2' => '1F5C45',
+		'gold'    => 'C9A55C',
+		'gold_bg' => 'F7F1E1',
+		'ink'     => '1F2D27',
+		'ink2'    => '3E4F47',
+		'muted'   => '7A8A82',
+		'paper'   => 'F4F7F5',
+		'hair'    => 'E4EAE6',
+		'zebra'   => 'FAFCFB',
+	);
+	return $d[ $key ] ?? $key;
+}
+
+/**
+ * Tones of a page type: tint (cluster head), soft (main keyword), mid (lines), dark (text / section band).
+ */
+function qtb_xpage( $page ) {
+	$t = array(
+		'landing' => array( 'tint' => 'DFF0E6', 'soft' => 'F1F8F4', 'mid' => '8CC5A3', 'dark' => '1E6B47', 'band' => '2E7D57' ),
+		'archive' => array( 'tint' => 'E2EBF6', 'soft' => 'F2F6FB', 'mid' => '9BB7DC', 'dark' => '2C5684', 'band' => '3B6A9E' ),
+		'product' => array( 'tint' => 'FAE6D8', 'soft' => 'FDF4EE', 'mid' => 'E5AE88', 'dark' => '8F4719', 'band' => 'B5652F' ),
+		'article' => array( 'tint' => 'F9EFCF', 'soft' => 'FDF9EC', 'mid' => 'DDC27A', 'dark' => '7A5B0C', 'band' => 'A47E1B' ),
+		'main'    => array( 'tint' => 'DFF0E6', 'soft' => 'F1F8F4', 'mid' => '8CC5A3', 'dark' => '0B3B2E', 'band' => '1F5C45' ),
+	);
+	return $t[ $page ] ?? $t['archive'];
+}
+
+/**
+ * A title band (first rows of every sheet).
+ */
+function qtb_xband( &$sh, $title, $sub, $last_col, $first_col = 2 ) {
+	$sh['cells'][1][ $first_col ] = qtb_c( $title, array( 'b' => true, 'size' => 15, 'color' => 'FFFFFF', 'bg' => qtb_xd( 'forest' ), 'h' => 'right', 'indent' => 1, 'bb' => qtb_xd( 'gold' ), 'bbm' => 1 ) );
+	$sh['cells'][2][ $first_col ] = qtb_c( $sub, array( 'size' => 9, 'color' => qtb_xd( 'muted' ), 'bg' => qtb_xd( 'paper' ), 'h' => 'right', 'indent' => 1 ) );
+	for ( $c = $first_col + 1; $c <= $last_col; $c++ ) {
+		$sh['cells'][1][ $c ] = qtb_c( '', array( 'bg' => qtb_xd( 'forest' ), 'bb' => qtb_xd( 'gold' ), 'bbm' => 1 ) );
+		$sh['cells'][2][ $c ] = qtb_c( '', array( 'bg' => qtb_xd( 'paper' ) ) );
+	}
+	if ( $last_col > $first_col ) {
+		$sh['merges'][] = qtb_ref( 1, $first_col ) . ':' . qtb_ref( 1, $last_col );
+		$sh['merges'][] = qtb_ref( 2, $first_col ) . ':' . qtb_ref( 2, $last_col );
+	}
+	$sh['heights'][1] = 36;
+	$sh['heights'][2] = 22;
+	$sh['heights'][3] = 10;
+}
+
+/**
+ * A clean table: forest header with a gold line, hairline rows, light zebra, optional group bands.
+ *
+ * @param array $head  [label => [width, align]]
+ * @param array $rows  rows of cells (a row ['__band' => text] is a full-width group band)
+ */
+function qtb_xtable( $name, $title, $sub, $head, $rows, $tab ) {
+	$n  = count( $head );
+	$sh = array( 'name' => $name, 'rtl' => true, 'fit' => true, 'tab' => $tab, 'cols' => array( 1 => 1.6 ), 'cells' => array(), 'merges' => array(), 'heights' => array() );
+	qtb_xband( $sh, $title, $sub, $n + 1 );
+	$r     = 4;
+	$c     = 2;
+	$align = array();
+	foreach ( $head as $label => $def ) {
+		$sh['cells'][ $r ][ $c ] = qtb_c( $label, array( 'b' => true, 'size' => 9.5, 'color' => 'FFFFFF', 'bg' => qtb_xd( 'forest2' ), 'h' => 'center', 'wrap' => true, 'bb' => qtb_xd( 'gold' ), 'bbm' => 1 ) );
+		$sh['cols'][ $c ]        = $def[0];
+		$align[ $c ]             = $def[1] ?? '';
+		++$c;
+	}
+	$sh['heights'][ $r ] = 30;
+	$sh['freeze']        = 'A' . ( $r + 1 );
+	$sh['filter']        = qtb_ref( $r, 2 ) . ':' . qtb_ref( $r, $n + 1 );
+	$z                   = 0;
+	foreach ( $rows as $row ) {
+		++$r;
+		if ( isset( $row['__band'] ) ) {
+			$sh['cells'][ $r ][2] = qtb_c( $row['__band'], array( 'b' => true, 'size' => 11, 'color' => qtb_xd( 'forest' ), 'bg' => qtb_xd( 'gold_bg' ), 'h' => 'right', 'indent' => 1, 'bb' => qtb_xd( 'gold' ) ) );
+			for ( $cc = 3; $cc <= $n + 1; $cc++ ) {
+				$sh['cells'][ $r ][ $cc ] = qtb_c( '', array( 'bg' => qtb_xd( 'gold_bg' ), 'bb' => qtb_xd( 'gold' ) ) );
+			}
+			$sh['merges'][]      = qtb_ref( $r, 2 ) . ':' . qtb_ref( $r, $n + 1 );
+			$sh['heights'][ $r ] = 24;
+			$z                   = 0;
+			continue;
+		}
+		$bg = ( $z++ % 2 ) ? qtb_xd( 'zebra' ) : '';
+		$c  = 2;
+		foreach ( $row as $cell ) {
+			$base = array( 'color' => qtb_xd( 'ink2' ), 'bb' => qtb_xd( 'hair' ), 'v' => 'center' );
+			if ( $bg ) {
+				$base['bg'] = $bg;
+			}
+			if ( '' !== $align[ $c ] ) {
+				$base['h'] = $align[ $c ];
+			}
+			if ( is_array( $cell ) ) {
+				$cell['s'] = array_merge( $base, (array) ( $cell['s'] ?? array() ) );
+				$sh['cells'][ $r ][ $c ] = $cell;
+			} else {
+				if ( is_int( $cell ) || is_float( $cell ) ) {
+					$base['fmt'] = '#,##0';
+					$base['h']   = $base['h'] ?? 'center';
+				}
+				$sh['cells'][ $r ][ $c ] = qtb_c( $cell, $base );
+			}
+			++$c;
+		}
+	}
+	return $sh;
+}
+
+/**
+ * Keyword research workbook: summary, one sheet per pillar (the research layout), the
+ * page map (each page with its keywords), and removed / parked keywords.
  */
 function qtb_book_research( $project ) {
 	$R      = qtb_result( $project );
 	$kws    = $R['keywords'];
 	$by_id  = $R['by_id'];
 	$meta   = $R['meta'];
-	$types  = qtb_page_types();
 	$sheets = array();
-
-	// Dashboard.
-	$d = array( 'name' => 'داشبورد', 'rtl' => true, 'tab' => qtb_xc( 'brand' ), 'cols' => array( 1 => 2 ), 'cells' => array(), 'merges' => array(), 'heights' => array() );
-	for ( $c = 2; $c <= 11; $c++ ) {
-		$d['cols'][ $c ] = 17;
+	$pages  = array( 'landing' => 0, 'archive' => 0, 'product' => 0, 'article' => 0 );
+	foreach ( $R['clusters'] as $cl ) {
+		$pages[ $cl['page'] ] = ( $pages[ $cl['page'] ] ?? 0 ) + 1;
 	}
-	$d['cols'][2]     = 30;
-	$d['cells'][1][2] = qtb_c( 'قطب‌نما | کیورد ریسرچ ' . $project['name'], array( 'b' => true, 'size' => 16, 'color' => 'FFFFFF', 'bg' => qtb_xc( 'brand' ), 'h' => 'right' ) );
-	$d['merges'][]    = 'B1:K1';
-	$d['heights'][1]  = 38;
-	$d['cells'][2][2] = qtb_c( sprintf( '%s · ساخته‌شده %s · %s', $project['site_url'], qtb_jdate( $meta['built'] ?? qtb_now() ), 'free' === ( $meta['serp_mode'] ?? 'free' ) ? 'خوشه‌بندی زبانی + هوش مصنوعی' : 'خوشه‌بندی بر اساس ۱۰ نتیجه اول گوگل' ), array( 'color' => qtb_xc( 'muted' ), 'size' => 9 ) );
-	$d['merges'][]    = 'B2:K2';
+	$nkw = 0;
+	foreach ( $R['clusters'] as $cl ) {
+		$nkw += count( $cl['kws'] );
+	}
+	$vol = array_sum( array_column( $R['clusters'], 'vol' ) );
+	$sub = sprintf( '%s  ·  %s  ·  %s', qtb_host( $project['site_url'] ), qtb_jdate( $meta['built'] ?? qtb_now() ), 'free' === ( $meta['serp_mode'] ?? 'free' ) ? 'خوشه‌بندی معنایی و هوش مصنوعی' : 'خوشه‌بندی بر اساس ۱۰ نتیجه اول گوگل' );
+
+	// 1. Summary.
+	$d = array( 'name' => 'خلاصه', 'rtl' => true, 'fit' => true, 'tab' => qtb_xd( 'forest' ), 'cols' => array( 1 => 1.6 ), 'cells' => array(), 'merges' => array(), 'heights' => array() );
+	for ( $c = 2; $c <= 9; $c++ ) {
+		$d['cols'][ $c ] = 14;
+	}
+	$d['cols'][2] = 26;
+	qtb_xband( $d, 'کیورد ریسرچ  |  ' . $project['name'], $sub, 9 );
 	$kpis = array(
-		'کلمات ورودی'                => (int) ( $meta['input'] ?? 0 ),
-		'کلمات معتبر'                => (int) ( $meta['keywords'] ?? count( $kws ) ),
-		'کلاستر (صفحه)'              => count( $R['clusters'] ),
-		'پیلار'                      => count( $R['pillars'] ),
-		'حجم جستجوی ماهانه'          => (int) ( $meta['volume'] ?? 0 ),
-		'فروش بالقوه ماهانه (تومان)' => (int) ( $meta['revenue'] ?? 0 ),
-		'صفحه جدید لازم'             => (int) ( $meta['coverage']['new'] ?? 0 ),
-		'برد سریع'                   => (int) ( $meta['quick'] ?? 0 ),
-		'کلمات حذف‌شده'              => (int) ( $meta['removed'] ?? 0 ),
+		array( 'حجم جستجوی ماهانه', $vol ),
+		array( 'صفحه (کلاستر)', count( $R['clusters'] ) ),
+		array( 'پیلار', count( $R['pillars'] ) ),
+		array( 'کلمه کلیدی', $nkw ),
 	);
 	$c = 2;
-	foreach ( $kpis as $label => $val ) {
-		$d['cells'][4][ $c ] = qtb_c( $label, array( 'size' => 9, 'color' => qtb_xc( 'muted' ), 'bg' => qtb_xc( 'mint' ), 'h' => 'center', 'wrap' => true ) );
-		$d['cells'][5][ $c ] = qtb_c( $val, array( 'b' => true, 'size' => 15, 'color' => qtb_xc( 'brand' ), 'bg' => qtb_xc( 'mint' ), 'h' => 'center', 'fmt' => '#,##0' ) );
-		++$c;
+	foreach ( $kpis as $k ) {
+		$span = 2 === $c ? 1 : 2;
+		$end  = $c + $span - 1;
+		$d['cells'][5][ $c ] = qtb_c( $k[0], array( 'size' => 9, 'color' => qtb_xd( 'muted' ), 'bg' => qtb_xd( 'paper' ), 'h' => 'center' ) );
+		$d['cells'][6][ $c ] = qtb_c( $k[1], array( 'b' => true, 'size' => 18, 'color' => qtb_xd( 'forest' ), 'bg' => qtb_xd( 'paper' ), 'h' => 'center', 'fmt' => '#,##0', 'bb' => qtb_xd( 'gold' ), 'bbm' => 1 ) );
+		for ( $x = $c + 1; $x <= $end; $x++ ) {
+			$d['cells'][5][ $x ] = qtb_c( '', array( 'bg' => qtb_xd( 'paper' ) ) );
+			$d['cells'][6][ $x ] = qtb_c( '', array( 'bg' => qtb_xd( 'paper' ), 'bb' => qtb_xd( 'gold' ), 'bbm' => 1 ) );
+		}
+		if ( $end > $c ) {
+			$d['merges'][] = qtb_ref( 5, $c ) . ':' . qtb_ref( 5, $end );
+			$d['merges'][] = qtb_ref( 6, $c ) . ':' . qtb_ref( 6, $end );
+		}
+		$c = $end + 1;
 	}
-	$d['heights'][4] = 30;
-	$d['heights'][5] = 34;
-	$r    = 7;
-	$head = array( 'پیلار', 'حجم جستجو', 'کلاستر', 'لندینگ', 'مقاله', 'اولویت P1', 'صفحه جدید', 'ترافیک بالقوه', 'فروش بالقوه (تومان)', 'فروش واقعی ۹۰ روز (تومان)' );
+	$d['heights'][5] = 22;
+	$d['heights'][6] = 38;
+	$r = 8;
+	$d['cells'][ $r ][2] = qtb_c( 'پیلارها', array( 'b' => true, 'size' => 12, 'color' => qtb_xd( 'forest' ), 'v' => 'center' ) );
+	$d['heights'][ $r ]  = 26;
+	++$r;
+	$head = array( 'پیلار', 'حجم جستجو', 'صفحه', 'لندینگ', 'آرشیو', 'محصول', 'مقاله', 'کلمه' );
 	foreach ( $head as $i => $h ) {
-		$d['cells'][ $r ][ $i + 2 ] = qtb_c( $h, qtb_xs_head() );
+		$d['cells'][ $r ][ $i + 2 ] = qtb_c( $h, array( 'b' => true, 'size' => 9.5, 'color' => 'FFFFFF', 'bg' => qtb_xd( 'forest2' ), 'h' => 'center', 'bb' => qtb_xd( 'gold' ), 'bbm' => 1 ) );
 	}
+	$d['heights'][ $r ] = 26;
+	$z = 0;
 	foreach ( $R['pillars'] as $p ) {
 		++$r;
-		$vals = array( $p['name'], $p['vol'], count( $p['clusters'] ), (int) ( $p['landings'] ?? 0 ), (int) ( $p['blogs'] ?? 0 ), (int) ( $p['p1'] ?? 0 ), (int) ( $p['new'] ?? 0 ), (int) round( $p['traffic'] ?? 0 ), (int) round( $p['revenue'] ?? 0 ), (int) ( $p['sales_rev'] ?? 0 ) );
-		foreach ( $vals as $i => $v ) {
-			$d['cells'][ $r ][ $i + 2 ] = qtb_c( $v, qtb_xs_td( 0 === $i ? array( 'b' => true ) : array( 'fmt' => '#,##0', 'h' => 'center' ) ) );
+		$cnt = array( 'landing' => 0, 'archive' => 0, 'product' => 0, 'article' => 0 );
+		$n   = 0;
+		foreach ( $p['clusters'] as $cid ) {
+			if ( isset( $by_id[ $cid ] ) ) {
+				$cnt[ $by_id[ $cid ]['page'] ] = ( $cnt[ $by_id[ $cid ]['page'] ] ?? 0 ) + 1;
+				$n                             += count( $by_id[ $cid ]['kws'] );
+			}
 		}
-	}
-	$r += 2;
-	$d['cells'][ $r ][2] = qtb_c( 'راهنمای رنگ‌ها', array( 'b' => true, 'color' => qtb_xc( 'brand' ) ) );
-	foreach ( array( 'landing' => 'لندینگ (خدمات، محلی، صفحه اختصاصی)', 'archive' => 'آرشیو (دسته، برند، برچسب، ویژگی)', 'product' => 'محصول', 'article' => 'مقاله (پشتیبان فروش)' ) as $k => $label ) {
-		++$r;
-		$d['cells'][ $r ][2] = qtb_c( $label, array( 'bg' => qtb_xc( $k ), 'border' => qtb_xc( 'line' ) ) );
-	}
-	$r += 2;
-	$d['cells'][ $r ][2] = qtb_c( 'برترین فرصت‌ها (بر اساس امتیاز فروش و بازگشت سرمایه)', array( 'b' => true, 'size' => 12, 'color' => qtb_xc( 'brand' ) ) );
-	$d['merges'][]       = 'B' . $r . ':J' . $r;
-	++$r;
-	foreach ( array( 'کلاستر', 'پیلار', 'نوع صفحه', 'حجم', 'امتیاز', 'اولویت', 'وضعیت', 'اقدام بعدی' ) as $i => $h ) {
-		$d['cells'][ $r ][ $i + 2 ] = qtb_c( $h, qtb_xs_head() );
-	}
-	$d['merges'][] = 'I' . $r . ':J' . $r;
-	foreach ( array_slice( qtb_sort( $R['clusters'], 'score' ), 0, 20 ) as $cl ) {
-		++$r;
-		$vals = array( $cl['name'], $R['pillars'][ $cl['pillar'] ]['name'] ?? '', qtb_page_label( $cl ), $cl['vol'], $cl['score'], $cl['priority'], qtb_coverage_label( $cl['coverage'] ), qtb_cluster_action( $cl ) );
+		$bg   = ( $z++ % 2 ) ? qtb_xd( 'zebra' ) : '';
+		$vals = array( $p['name'], (int) $p['vol'], count( $p['clusters'] ), $cnt['landing'], $cnt['archive'], $cnt['product'], $cnt['article'], $n );
 		foreach ( $vals as $i => $v ) {
-			$st = qtb_xs_td( 0 === $i ? array( 'b' => true, 'bg' => qtb_xc( $cl['page'] ) ) : ( is_int( $v ) ? array( 'fmt' => '#,##0', 'h' => 'center' ) : array() ) );
+			$st = array( 'bb' => qtb_xd( 'hair' ), 'v' => 'center', 'color' => 0 === $i ? qtb_xd( 'ink' ) : qtb_xd( 'ink2' ) ) + ( $bg ? array( 'bg' => $bg ) : array() );
+			$st += 0 === $i ? array( 'b' => true ) : array( 'h' => 'center', 'fmt' => '#,##0' );
 			$d['cells'][ $r ][ $i + 2 ] = qtb_c( $v, $st );
 		}
-		$d['merges'][] = 'I' . $r . ':J' . $r;
+		$d['heights'][ $r ] = 22;
+	}
+	$r += 2;
+	$d['cells'][ $r ][2] = qtb_c( 'نوع صفحات', array( 'b' => true, 'size' => 12, 'color' => qtb_xd( 'forest' ), 'v' => 'center' ) );
+	$d['heights'][ $r ]  = 26;
+	foreach ( array( 'landing' => 'لندینگ — صفحه اختصاصی (خدمات، شعبه، موضوع خاص)', 'archive' => 'آرشیو — دسته، برند، برچسب یا ویژگی فروشگاه', 'product' => 'محصول — یک محصول مشخص', 'article' => 'مقاله — آموزش، مقایسه و راهنمای خرید' ) as $k => $label ) {
+		++$r;
+		$t = qtb_xpage( $k );
+		$d['cells'][ $r ][2] = qtb_c( qtb_page_types()[ $k ][0] ?? $k, array( 'b' => true, 'bg' => $t['tint'], 'color' => $t['dark'], 'h' => 'center', 'bb' => $t['mid'] ) );
+		$d['cells'][ $r ][3] = qtb_c( (int) ( $pages[ $k ] ?? 0 ), array( 'b' => true, 'color' => $t['dark'], 'h' => 'center', 'bb' => qtb_xd( 'hair' ) ) );
+		$d['cells'][ $r ][4] = qtb_c( $label, array( 'color' => qtb_xd( 'ink2' ), 'size' => 9.5, 'bb' => qtb_xd( 'hair' ), 'v' => 'center', 'indent' => 1 ) );
+		for ( $x = 5; $x <= 9; $x++ ) {
+			$d['cells'][ $r ][ $x ] = qtb_c( '', array( 'bb' => qtb_xd( 'hair' ) ) );
+		}
+		$d['merges'][]      = qtb_ref( $r, 4 ) . ':' . qtb_ref( $r, 9 );
+		$d['heights'][ $r ] = 22;
 	}
 	$sheets[] = $d;
 
-	// Pillar sheets (Delna layout).
+	// 2. Pillar sheets.
 	foreach ( $R['pillars'] as $p ) {
-		$sheets[] = qtb_pillar_sheet( $p, $by_id, $kws );
+		$sheets[] = qtb_pillar_sheet( $p, $by_id, $kws, $sub );
 	}
 
-	// Keyword map.
+	// 3. Page map: one row per page, its keywords in one cell.
 	$rows = array();
+	$no   = 0;
 	foreach ( $R['pillars'] as $p ) {
+		$rows[] = array( '__band' => $p['name'] . '  ·  ' . qtb_num( count( $p['clusters'] ) ) . ' صفحه  ·  حجم ' . qtb_num( $p['vol'] ) );
 		foreach ( $p['sections'] as $s ) {
 			foreach ( $s['clusters'] as $cid ) {
 				$cl = $by_id[ $cid ] ?? null;
 				if ( ! $cl ) {
 					continue;
 				}
-				foreach ( $cl['kws'] as $j => $m ) {
-					$rows[] = array(
-						$p['name'],
-						$s['name'],
-						qtb_c( $cl['name'], qtb_xs_td( 0 === $j ? array( 'b' => true ) : array() ) ),
-						qtb_c( $kws[ $m ]['k'], qtb_xs_td( 0 === $j ? array( 'b' => true ) : array() ) ),
-						(int) $kws[ $m ]['v'],
-						0 === $j ? 'اصلی' : 'فرعی',
-						qtb_intents()[ $cl['intent'] ] ?? '',
-						qtb_c( qtb_page_label( $cl ), qtb_xs_td( array( 'bg' => qtb_xc( $cl['page'] ) ) ) ),
-						$cl['priority'],
-						(int) $cl['score'],
-						(int) $cl['diff'],
-						$cl['target'] ? qtb_c( rawurldecode( $cl['target']['url'] ), qtb_xs_td( array( 'color' => '1155CC' ) ), $cl['target']['url'] ) : '',
-						qtb_coverage_label( $cl['coverage'] ),
-						$cl['serp'] && $cl['serp']['own_pos'] ? (int) $cl['serp']['own_pos'] : '',
-					);
+				$t    = qtb_xpage( $cl['page'] );
+				$head = $cl['kws'][0];
+				$rest = array();
+				foreach ( array_slice( $cl['kws'], 1 ) as $m ) {
+					$rest[] = $kws[ $m ]['k'] . ' (' . qtb_num( $kws[ $m ]['v'] ) . ')';
 				}
+				$title  = (string) ( $cl['gap']['title'] ?? '' );
+				$rows[] = array(
+					++$no,
+					$s['name'],
+					qtb_c( $cl['name'], array( 'b' => true, 'color' => qtb_xd( 'ink' ) ) ),
+					qtb_c( qtb_page_label( $cl ), array( 'b' => true, 'bg' => $t['tint'], 'color' => $t['dark'], 'h' => 'center' ) ),
+					qtb_c( $kws[ $head ]['k'], array( 'color' => $t['dark'] ) ),
+					(int) $kws[ $head ]['v'],
+					qtb_c( implode( '، ', $rest ), array( 'wrap' => true, 'size' => 9.5 ) ),
+					count( $cl['kws'] ),
+					qtb_c( (int) $cl['vol'], array( 'b' => true, 'fmt' => '#,##0', 'h' => 'center', 'color' => qtb_xd( 'forest' ) ) ),
+					$cl['target'] ? qtb_c( rawurldecode( $cl['target']['url'] ), array( 'color' => '2C5684', 'size' => 9 ), $cl['target']['url'] ) : qtb_c( 'صفحه جدید', array( 'color' => qtb_xd( 'muted' ), 'size' => 9 ) ),
+					qtb_c( '' !== $title ? $title : '', array( 'wrap' => true, 'size' => 9.5 ) ),
+				);
 			}
 		}
 	}
-	$sheets[] = qtb_table_sheet( 'نقشه کلمات', array( 'پیلار' => 18, 'بخش' => 18, 'کلاستر (صفحه)' => 28, 'کلمه کلیدی' => 32, 'حجم' => 9, 'نقش' => 7, 'نیت' => 16, 'نوع صفحه' => 14, 'اولویت' => 8, 'امتیاز' => 8, 'سختی' => 8, 'صفحه هدف' => 36, 'وضعیت' => 18, 'جایگاه ما' => 9 ), $rows, qtb_xc( 'brand2' ) );
+	$sheets[] = qtb_xtable(
+		'نقشه صفحات',
+		'نقشه صفحات و کلمات  |  ' . $project['name'],
+		'هر ردیف یک صفحه: کلمه اصلی صفحه و کلمات فرعی که همان صفحه باید پوشش دهد. ' . $sub,
+		array(
+			'#'                => array( 5, 'center' ),
+			'بخش'              => array( 18, '' ),
+			'صفحه'             => array( 28, '' ),
+			'نوع صفحه'         => array( 14, 'center' ),
+			'کلمه کلیدی اصلی'  => array( 26, '' ),
+			'حجم'              => array( 9, 'center' ),
+			'کلمات فرعی (حجم)' => array( 70, '' ),
+			'تعداد کلمات'      => array( 9, 'center' ),
+			'حجم کل صفحه'      => array( 11, 'center' ),
+			'صفحه فعلی سایت'   => array( 30, '' ),
+			'عنوان پیشنهادی'   => array( 30, '' ),
+		),
+		$rows,
+		qtb_xd( 'gold' )
+	);
 
-	// Clusters.
-	$rows = array();
-	foreach ( qtb_sort( $R['clusters'], 'score' ) as $cl ) {
-		$rows[] = array(
-			qtb_c( $cl['name'], qtb_xs_td( array( 'b' => true, 'bg' => qtb_xc( $cl['page'] ) ) ) ),
-			$R['pillars'][ $cl['pillar'] ]['name'] ?? '',
-			$cl['section'] ?? '',
-			count( $cl['kws'] ),
-			(int) $cl['vol'],
-			qtb_intents()[ $cl['intent'] ] ?? '',
-			qtb_page_label( $cl ),
-			qtb_c( (string) ( $cl['page_reason'] ?? '' ), qtb_xs_td( array( 'wrap' => true, 'size' => 9 ) ) ),
-			$cl['priority'],
-			(int) $cl['score'],
-			(int) $cl['diff'],
-			(int) round( $cl['value']['traffic'] ?? 0 ),
-			(int) ( $cl['value']['revenue'] ?? 0 ),
-			$cl['target'] ? qtb_c( rawurldecode( $cl['target']['url'] ), qtb_xs_td( array( 'color' => '1155CC' ) ), $cl['target']['url'] ) : '',
-			qtb_coverage_label( $cl['coverage'] ),
-			$cl['serp'] && $cl['serp']['own_pos'] ? (int) $cl['serp']['own_pos'] : '',
-			! empty( $cl['quick_win'] ) ? 'بله' : '',
-			$cl['serp'] ? implode( '، ', array_slice( $cl['serp']['competitors'], 0, 4 ) ) : '',
-			implode( ' | ', array_map( function ( $i ) {
-				return $i['text'];
-			}, (array) ( $cl['issues'] ?? array() ) ) ),
-			$cl['serp'] ? 'بله' : 'خیر',
-			qtb_cluster_action( $cl ),
-		);
-	}
-	$sheets[] = qtb_table_sheet( 'کلاسترها', array( 'کلاستر (کلمه اصلی)' => 28, 'پیلار' => 16, 'بخش' => 16, 'تعداد کلمات' => 9, 'حجم کل' => 10, 'نیت' => 16, 'نوع صفحه' => 13, 'چرا این نوع صفحه' => 44, 'اولویت' => 8, 'امتیاز' => 8, 'سختی' => 8, 'ترافیک بالقوه' => 11, 'فروش بالقوه (تومان)' => 15, 'صفحه هدف' => 34, 'وضعیت پوشش' => 18, 'جایگاه ما' => 9, 'برد سریع' => 9, 'رقبای برتر' => 36, 'هشدارها' => 40, 'بررسی با گوگل' => 10, 'اقدام بعدی' => 40 ), $rows, qtb_xc( 'brand2' ) );
-
-	// Content gaps.
-	$rows = array();
-	foreach ( qtb_sort( $R['clusters'], 'score' ) as $cl ) {
-		$g = (array) ( $cl['gap'] ?? array() );
-		if ( empty( $g['angle'] ) && empty( $g['gaps'] ) ) {
-			continue;
-		}
-		$w      = qtb_xs_td( array( 'wrap' => true, 'v' => 'top' ) );
-		$rows[] = array(
-			qtb_c( $cl['name'], qtb_xs_td( array( 'b' => true, 'v' => 'top' ) ) ),
-			qtb_page_label( $cl ),
-			qtb_c( (string) ( $g['intent'] ?? '' ), $w ),
-			qtb_c( (string) ( $g['angle'] ?? '' ), $w ),
-			qtb_c( implode( "\n", (array) ( $g['must_cover'] ?? array() ) ), $w ),
-			qtb_c( implode( "\n", (array) ( $g['gaps'] ?? array() ) ), qtb_xs_td( array( 'wrap' => true, 'v' => 'top', 'bg' => 'FDF3E1' ) ) ),
-			qtb_c( implode( "\n", (array) ( $g['outline'] ?? array() ) ), $w ),
-			qtb_c( implode( "\n", (array) ( $g['faq'] ?? array() ) ), $w ),
-			qtb_c( (string) ( $g['title'] ?? '' ), $w ),
-			qtb_c( (string) ( $g['meta'] ?? '' ), $w ),
-			(int) ( $g['words'] ?? 0 ),
-			qtb_c( (string) ( $g['cta'] ?? '' ), $w ),
-			(string) ( $g['schema'] ?? '' ),
-			empty( $g['serp'] ) ? 'دانش مدل' : '۱۰ نتیجه گوگل',
-		);
-	}
-	if ( $rows ) {
-		$sheets[] = qtb_table_sheet( 'شکاف محتوایی', array( 'کلاستر' => 24, 'نوع صفحه' => 12, 'نیت کاربر' => 30, 'زاویه برنده ما' => 34, 'باید پوشش داده شود' => 38, 'شکاف‌ها (رقبا ندارند)' => 40, 'سرتیترهای پیشنهادی' => 40, 'سوالات متداول' => 36, 'عنوان سئو' => 30, 'متا' => 36, 'کلمات' => 8, 'دعوت به اقدام' => 30, 'اسکیما' => 12, 'منبع تحلیل' => 12 ), $rows, 'E69138' );
-	}
-
-	// Cannibalization & warnings.
-	$rows = array();
-	foreach ( $R['clusters'] as $cl ) {
-		foreach ( (array) ( $cl['issues'] ?? array() ) as $is ) {
-			$rows[] = array( qtb_c( $cl['name'], qtb_xs_td( array( 'b' => true ) ) ), qtb_c( $is['text'], qtb_xs_td( array( 'wrap' => true ) ) ), qtb_c( implode( "\n", array_map( 'rawurldecode', (array) $is['urls'] ) ), qtb_xs_td( array( 'wrap' => true, 'color' => '1155CC' ) ) ), (int) $cl['vol'] );
-		}
-	}
-	if ( $rows ) {
-		$sheets[] = qtb_table_sheet( 'کنیبالیزیشن', array( 'کلاستر' => 28, 'مشکل' => 46, 'آدرس‌ها' => 60, 'حجم' => 10 ), $rows, 'CC0000' );
-	}
-
-	// Competitors.
-	$dom = array();
-	foreach ( $R['clusters'] as $cl ) {
-		if ( ! $cl['serp'] ) {
-			continue;
-		}
-		foreach ( $cl['serp']['competitors'] as $rank => $dm ) {
-			if ( ! isset( $dom[ $dm ] ) ) {
-				$dom[ $dm ] = array( 'n' => 0, 'vol' => 0, 'land' => 0, 'blog' => 0 );
-			}
-			$dom[ $dm ]['n']++;
-			$dom[ $dm ]['vol'] += $cl['vol'];
-			$dom[ $dm ][ 'article' === $cl['page'] ? 'blog' : 'land' ]++;
-		}
-	}
-	if ( $dom ) {
-		uasort( $dom, function ( $a, $b ) {
-			return $b['vol'] <=> $a['vol'];
-		} );
-		$checked = max( 1, count( array_filter( $R['clusters'], function ( $c ) {
-			return ! empty( $c['serp'] );
-		} ) ) );
-		$rows = array();
-		foreach ( array_slice( $dom, 0, 150, true ) as $dm => $x ) {
-			$rows[] = array( qtb_c( $dm, qtb_xs_td( array( 'b' => true ) ), 'https://' . $dm ), $x['n'], qtb_c( round( $x['n'] / $checked, 3 ), qtb_xs_td( array( 'fmt' => '0%', 'h' => 'center' ) ) ), $x['vol'], $x['land'], $x['blog'], qtb_domain_in( $dm, 'market_domains' ) ? 'بازارگاه' : ( qtb_domain_in( $dm, 'strong' ) ? 'دامنه قوی' : '' ) );
-		}
-		$sheets[] = qtb_table_sheet( 'رقبا', array( 'دامنه' => 30, 'حضور در ۱۰ نتیجه اول' => 14, 'سهم از کلاسترها' => 12, 'حجم جستجوی پوشش‌داده' => 16, 'در لندینگ‌ها' => 12, 'در مقاله‌ها' => 12, 'نوع' => 12 ), $rows, '674EA7' );
-	}
-
-	// More ideas: People Also Ask + related searches.
-	$rows = array();
-	$seen = array();
-	foreach ( qtb_sort( $R['clusters'], 'score' ) as $cl ) {
-		if ( ! $cl['serp'] ) {
-			continue;
-		}
-		foreach ( array( 'paa' => 'سوال کاربران (PAA)', 'related' => 'جستجوی مرتبط' ) as $k => $label ) {
-			foreach ( (array) $cl['serp'][ $k ] as $q ) {
-				$key = qtb_key( $q );
-				if ( isset( $seen[ $key ] ) ) {
-					continue;
-				}
-				$seen[ $key ] = true;
-				$rows[]       = array( $q, $label, $cl['name'], $R['pillars'][ $cl['pillar'] ]['name'] ?? '' );
-			}
-		}
-	}
-	if ( $rows ) {
-		$sheets[] = qtb_table_sheet( 'ایده‌های بیشتر', array( 'ایده / سوال' => 48, 'منبع' => 18, 'کلاستر مرتبط' => 28, 'پیلار' => 18 ), $rows, qtb_xc( 'gold' ) );
-	}
-
-	// Taxonomy.
-	$rows = array();
-	foreach ( $R['pillars'] as $p ) {
-		$rows[] = array( qtb_c( $p['name'], qtb_xs_td( array( 'b' => true ) ) ), qtb_c( implode( '، ', array_column( $p['sections'], 'name' ) ), qtb_xs_td( array( 'wrap' => true ) ) ), count( $p['clusters'] ), (int) ( $p['landings'] ?? 0 ), (int) ( $p['blogs'] ?? 0 ), (int) $p['vol'] );
-	}
-	$sheets[] = qtb_table_sheet( 'دسته بندی', array( 'پیلار' => 22, 'بخش‌ها' => 60, 'کلاستر' => 10, 'لندینگ' => 10, 'مقاله' => 10, 'حجم' => 12 ), $rows, qtb_xc( 'brand2' ) );
-
-	// Removed keywords.
+	// 4. Removed and parked.
 	$rows    = array();
 	$reasons = qtb_remove_reasons();
-	foreach ( qtb_sort( $R['removed'], 'v' ) as $x ) {
-		$rows[] = array( $x['k'], (int) $x['v'], $reasons[ $x['r'] ] ?? $x['r'], (string) ( $x['d'] ?? '' ), ! empty( $x['ai'] ) ? 'هوش مصنوعی' : ( 'manual' === $x['r'] ? 'دستی' : 'قانون' ) );
+	foreach ( $kws as $kw ) {
+		if ( 'park' === ( $kw['ws'] ?? '' ) ) {
+			$rows[] = array( $kw['k'], (int) $kw['v'], qtb_c( 'پارکینگ', array( 'b' => true, 'color' => '7A5B0C', 'bg' => 'F9EFCF', 'h' => 'center' ) ), 'برای تصمیم بعدی', (string) ( $kw['tn'] ?? '' ) );
+		}
 	}
-	$sheets[] = qtb_table_sheet( 'حذف‌شده‌ها', array( 'کلمه' => 34, 'حجم' => 10, 'دلیل حذف' => 30, 'جزئیات' => 26, 'تشخیص' => 12 ), $rows, '999999' );
+	foreach ( qtb_sort( $R['removed'], 'v' ) as $x ) {
+		$rows[] = array( $x['k'], (int) $x['v'], qtb_c( 'حذف', array( 'color' => '9A3B37', 'h' => 'center' ) ), $reasons[ $x['r'] ] ?? $x['r'], (string) ( $x['d'] ?? '' ) );
+	}
+	$sheets[] = qtb_xtable( 'حذف‌شده و پارکینگ', 'کلمات کنار گذاشته‌شده', 'برای شفافیت: هر کلمه با دلیل. کلمات پارکینگ را بعداً می‌توان به پروژه برگرداند.', array( 'کلمه' => array( 34, '' ), 'حجم' => array( 10, 'center' ), 'وضعیت' => array( 11, 'center' ), 'دلیل' => array( 30, '' ), 'جزئیات' => array( 34, '' ) ), $rows, 'A0A9A4' );
 
 	return array( 'title' => 'Keyword Research — ' . $project['name'], 'sheets' => $sheets );
 }
 
 /**
- * One pillar sheet in the Delna layout.
+ * One pillar sheet in the research layout: section bands, one «keyword | volume» block per
+ * cluster (page), the main keyword first, and the total under it.
  */
-function qtb_pillar_sheet( $p, $by_id, $kws ) {
-	$sh  = array( 'name' => $p['name'], 'rtl' => true, 'tab' => qtb_xc( 'total' ), 'cols' => array( 1 => 2.5 ), 'cells' => array(), 'merges' => array(), 'heights' => array( 1 => 30, 2 => 24, 3 => 22, 4 => 16 ), 'freeze' => 'A5' );
-	$col = 2;
-	$secfill = array( 'main' => qtb_xc( 'sec_main' ), 'landing' => qtb_xc( 'sec_landing' ), 'archive' => qtb_xc( 'sec_archive' ), 'product' => qtb_xc( 'sec_product' ), 'article' => qtb_xc( 'sec_article' ) );
-	$fill    = array( 'landing' => qtb_xc( 'landing' ), 'archive' => qtb_xc( 'archive' ), 'product' => qtb_xc( 'product' ), 'article' => qtb_xc( 'article' ) );
-	$max_row = 5;
+function qtb_pillar_sheet( $p, $by_id, $kws, $sub = '' ) {
+	$sh      = array( 'name' => $p['name'], 'rtl' => true, 'tab' => qtb_xd( 'forest2' ), 'cols' => array( 1 => 1.6 ), 'cells' => array(), 'merges' => array(), 'heights' => array( 4 => 26, 5 => 34, 6 => 17 ), 'freeze' => 'A7' );
+	$col     = 2;
+	$max_row = 7;
+	$nkw     = 0;
 	foreach ( $p['sections'] as $s ) {
 		$start = $col;
+		$kind  = 'main' === $s['kind'] ? 'main' : ( $s['kind'] ?: 'archive' );
 		foreach ( $s['clusters'] as $cid ) {
 			$c = $by_id[ $cid ] ?? null;
 			if ( ! $c ) {
 				continue;
 			}
-			$f = $fill[ $c['page'] ] ?? qtb_xc( 'archive' );
+			$t                      = qtb_xpage( $c['page'] );
 			$sh['cols'][ $col ]     = 30;
-			$sh['cols'][ $col + 1 ] = 8.5;
-			$sh['cols'][ $col + 2 ] = 2.5;
-			$sh['cells'][3][ $col ] = qtb_c( $c['name'], array( 'b' => true, 'bg' => $f, 'h' => 'center', 'border' => 'B7C9BF', 'wrap' => true ) );
-			$sh['cells'][3][ $col + 1 ] = qtb_c( '', array( 'bg' => $f, 'border' => 'B7C9BF' ) );
-			$sh['merges'][] = qtb_ref( 3, $col ) . ':' . qtb_ref( 3, $col + 1 );
-			$badge = sprintf( '%s · امتیاز %s · %s', $c['priority'], $c['score'], qtb_coverage_label( $c['coverage'] ) );
-			$sh['cells'][4][ $col ] = qtb_c( $badge, array( 'size' => 8, 'color' => qtb_xc( 'muted' ), 'h' => 'center' ) );
-			$sh['merges'][] = qtb_ref( 4, $col ) . ':' . qtb_ref( 4, $col + 1 );
-			$r = 5;
+			$sh['cols'][ $col + 1 ] = 9;
+			$sh['cols'][ $col + 2 ] = 1.6;
+			// Cluster head: the page.
+			$sh['cells'][5][ $col ]     = qtb_c( $c['name'], array( 'b' => true, 'size' => 10.5, 'bg' => $t['tint'], 'color' => $t['dark'], 'h' => 'center', 'wrap' => true, 'bb' => $t['mid'], 'bbm' => 1 ) );
+			$sh['cells'][5][ $col + 1 ] = qtb_c( '', array( 'bg' => $t['tint'], 'bb' => $t['mid'], 'bbm' => 1 ) );
+			$sh['merges'][]             = qtb_ref( 5, $col ) . ':' . qtb_ref( 5, $col + 1 );
+			$sh['cells'][6][ $col ]     = qtb_c( qtb_page_label( $c ) . '  ·  ' . qtb_num( count( $c['kws'] ) ) . ' کلمه', array( 'size' => 8, 'color' => $t['dark'], 'h' => 'center' ) );
+			$sh['merges'][]             = qtb_ref( 6, $col ) . ':' . qtb_ref( 6, $col + 1 );
+			$r                          = 7;
 			foreach ( $c['kws'] as $j => $m ) {
-				$st  = array( 'border' => qtb_xc( 'line' ) );
-				$st2 = array( 'border' => qtb_xc( 'line' ), 'fmt' => '#,##0', 'h' => 'center' );
+				$st  = array( 'color' => qtb_xd( 'ink2' ), 'bb' => qtb_xd( 'hair' ) );
+				$st2 = array( 'color' => qtb_xd( 'muted' ), 'bb' => qtb_xd( 'hair' ), 'fmt' => '#,##0', 'h' => 'center', 'size' => 9.5 );
 				if ( 0 === $j ) {
-					$st['b']   = true;
-					$st['bg']  = $f;
-					$st2['b']  = true;
-					$st2['bg'] = $f;
+					$st  = array( 'b' => true, 'color' => qtb_xd( 'ink' ), 'bg' => $t['soft'], 'bb' => $t['mid'] );
+					$st2 = array( 'b' => true, 'color' => $t['dark'], 'bg' => $t['soft'], 'bb' => $t['mid'], 'fmt' => '#,##0', 'h' => 'center' );
 				}
 				$sh['cells'][ $r ][ $col ]     = qtb_c( $kws[ $m ]['k'], $st );
 				$sh['cells'][ $r ][ $col + 1 ] = qtb_c( (int) $kws[ $m ]['v'], $st2 );
 				++$r;
+				++$nkw;
 			}
-			$sh['cells'][ $r ][ $col ]     = qtb_c( 'جمع', array( 'b' => true, 'bg' => qtb_xc( 'total' ), 'color' => 'FFFFFF', 'h' => 'center' ) );
-			$sh['cells'][ $r ][ $col + 1 ] = qtb_c( (int) $c['vol'], array( 'b' => true, 'bg' => qtb_xc( 'total' ), 'color' => 'FFFFFF', 'h' => 'center', 'fmt' => '#,##0' ) );
-			$max_row = max( $max_row, $r );
-			$col    += 3;
+			$sh['cells'][ $r ][ $col ]     = qtb_c( 'جمع', array( 'b' => true, 'bg' => $t['tint'], 'color' => $t['dark'], 'h' => 'center', 'bt' => $t['mid'], 'btm' => 1 ) );
+			$sh['cells'][ $r ][ $col + 1 ] = qtb_c( (int) $c['vol'], array( 'b' => true, 'bg' => $t['tint'], 'color' => $t['dark'], 'h' => 'center', 'fmt' => '#,##0', 'bt' => $t['mid'], 'btm' => 1 ) );
+			$max_row                       = max( $max_row, $r );
+			$col                          += 3;
 		}
 		if ( $col > $start ) {
-			$sh['cells'][2][ $start ] = qtb_c( $s['name'], array( 'b' => true, 'size' => 11, 'bg' => $secfill[ $s['kind'] ] ?? qtb_xc( 'sec_archive' ), 'color' => 'article' === $s['kind'] ? qtb_xc( 'ink' ) : 'FFFFFF', 'h' => 'center' ) );
-			$end = $col - 2;
-			if ( $end > $start ) {
-				$sh['merges'][] = qtb_ref( 2, $start ) . ':' . qtb_ref( 2, $end );
+			$band = qtb_xpage( $kind )['band'];
+			$end  = $col - 2;
+			for ( $x = $start; $x <= $end; $x++ ) {
+				$sh['cells'][4][ $x ] = qtb_c( $x === $start ? $s['name'] : '', array( 'b' => true, 'size' => 11, 'bg' => $band, 'color' => 'FFFFFF', 'h' => $end - $start > 2 ? 'right' : 'center', 'indent' => 1 ) );
 			}
+			if ( $end > $start ) {
+				$sh['merges'][] = qtb_ref( 4, $start ) . ':' . qtb_ref( 4, $end );
+			}
+			// A wider gap between sections.
+			$sh['cols'][ $col - 1 ] = 3.2;
 		}
 	}
 	$last = max( 3, $col - 2 );
-	$sh['cells'][1][2] = qtb_c( sprintf( '%s — حجم کل %s · %s کلاستر', $p['name'], qtb_num( $p['vol'] ), qtb_num( count( $p['clusters'] ) ) ), array( 'b' => true, 'size' => 13, 'bg' => qtb_xc( 'brand' ), 'color' => 'FFFFFF', 'h' => 'right' ) );
-	if ( $last > 2 ) {
-		$sh['merges'][] = 'B1:' . qtb_ref( 1, $last );
-	}
+	qtb_xband( $sh, $p['name'], sprintf( 'حجم کل %s  ·  %s صفحه  ·  %s کلمه%s', qtb_num( $p['vol'] ), qtb_num( count( $p['clusters'] ) ), qtb_num( $nkw ), '' !== $sub ? '  ·  ' . $sub : '' ), $last );
 	return $sh;
 }
 

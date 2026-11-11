@@ -72,12 +72,23 @@ function qtb_gcell( $cell ) {
 	if ( ! empty( $s['wrap'] ) ) {
 		$f['wrapStrategy'] = 'WRAP';
 	}
+	if ( ! empty( $s['indent'] ) ) {
+		$f['padding'] = array( 'right' => 6 + 8 * (int) $s['indent'], 'left' => 6, 'top' => 2, 'bottom' => 2 );
+	}
 	if ( ! empty( $s['fmt'] ) ) {
 		$f['numberFormat'] = '0%' === $s['fmt'] ? array( 'type' => 'PERCENT', 'pattern' => '0%' ) : array( 'type' => 'NUMBER', 'pattern' => $s['fmt'] );
 	}
 	if ( ! empty( $s['border'] ) ) {
 		$b            = array( 'style' => 'SOLID', 'color' => qtb_gcolor( is_string( $s['border'] ) ? $s['border'] : 'D9D9D9' ) );
 		$f['borders'] = array( 'top' => $b, 'bottom' => $b, 'left' => $b, 'right' => $b );
+	} elseif ( ! empty( $s['bt'] ) || ! empty( $s['bb'] ) ) {
+		$f['borders'] = array();
+		if ( ! empty( $s['bt'] ) ) {
+			$f['borders']['top'] = array( 'style' => ! empty( $s['btm'] ) ? 'SOLID_MEDIUM' : 'SOLID', 'color' => qtb_gcolor( $s['bt'] ) );
+		}
+		if ( ! empty( $s['bb'] ) ) {
+			$f['borders']['bottom'] = array( 'style' => ! empty( $s['bbm'] ) ? 'SOLID_MEDIUM' : 'SOLID', 'color' => qtb_gcolor( $s['bb'] ) );
+		}
 	}
 	$d['userEnteredFormat'] = $f;
 	return $d;
@@ -160,7 +171,7 @@ function qtb_gsheet_sheet_requests( $sh, $sid ) {
  *
  * @param string[] $kinds research|calendar
  */
-function qtb_gsheet_prepare( $project, $kinds = array( 'research', 'calendar' ) ) {
+function qtb_gsheet_prepare( $project, $kinds = array( 'research' ) ) {
 	$sheet_id = qtb_gsheet_target( $project );
 	if ( '' === $sheet_id ) {
 		return new WP_Error( 'qtb_gs_none', 'لینک گوگل شیت خروجی (یا ورودی) در تنظیمات پروژه وارد نشده است.' );

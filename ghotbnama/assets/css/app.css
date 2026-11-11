@@ -371,6 +371,10 @@ body.qtb-app { margin: 0; background: var(--paper); color: var(--ink); font: 14p
 .qtb-chip.is-ts-ready { background: var(--gold-soft); color: #8C6D1F !important; }
 .qtb-chip.is-ts-approved { background: var(--accent); color: #fff !important; }
 .qtb-chip.is-ai { background: #F1ECFB; color: #5B3FA0 !important; }
+.qtb-chip.is-fresh, .qtb-new-tag { background: #E7F0FF; color: #2759A8 !important; }
+.qtb-chip.is-own { background: var(--gold-soft); color: #8C6D1F !important; border: 1px solid #EBDDB0; }
+.qtb-new-tag { flex: none; font-size: 9.5px; font-weight: 800; padding: 0 5px; border-radius: 6px; line-height: 1.7; }
+.qtb-wsadd textarea { width: 100%; margin-bottom: 8px; }
 .qtb-freq { display: flex; flex-wrap: wrap; gap: 6px; }
 .qtb-freq-w { display: inline-flex; align-items: center; gap: 2px; background: var(--soft); border: 1px solid var(--line); border-radius: 99px; padding: 1px 4px 1px 10px; font-size: 12.5px; }
 .qtb-freq-w em { font-style: normal; color: var(--muted); font-size: 11px; margin-inline-end: 4px; }
@@ -392,6 +396,14 @@ body.qtb-app { margin: 0; background: var(--paper); color: var(--ink); font: 14p
 .qtb-board.is-dragging .qtb-drop { border-color: var(--accent); background: var(--mint-soft); }
 .qtb-board.is-dragging .qtb-drop.is-remove { border-color: var(--bad); background: #FDF0EF; }
 .qtb-drop.is-over, .qtb-bd-cl.is-over, .qtb-aside.is-over { outline: 3px solid var(--gold); outline-offset: -1px; }
+.qtb-bd-secs { display: grid; gap: 18px; }
+.qtb-bd-sec { border-radius: 16px; padding: 4px; transition: background .15s, outline-color .15s; outline: 2px dashed transparent; outline-offset: 2px; }
+.qtb-bd-sec-h { display: flex; align-items: center; gap: 8px; margin: 0 4px 10px; font-size: 14px; }
+.qtb-bd-sec-h i { width: 10px; height: 10px; border-radius: 3px; background: var(--gold); flex: none; }
+.qtb-bd-sec-h b { font-weight: 800; }
+.qtb-board.is-dragging-cl .qtb-bd-sec { outline-color: var(--line-2); }
+.qtb-board.is-dragging-cl .qtb-bd-sec.is-over { outline-color: var(--gold); background: var(--gold-soft); }
+.qtb-bd-cl .qtb-cl-h[draggable] { cursor: grab; }
 .qtb-bd-cl.is-locked .qtb-lock { color: var(--accent-ink); background: rgba(255,255,255,.6); }
 .qtb-bd-cl li, .qtb-aside li { display: flex; align-items: center; gap: 6px; cursor: grab; }
 .qtb-bd-cl li > span:first-of-type, .qtb-aside li > span:first-of-type { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -25,13 +25,8 @@ endif;
 <div class="qtb-cards">
 	<div class="qtb-card">
 		<h3><?php echo qtb_icon( 'sheet', 20 ); // phpcs:ignore ?> فایل کیورد ریسرچ</h3>
-		<p class="qtb-small qtb-muted" style="margin:0">داشبورد، یک شیت برای هر پیلار به سبک کیورد ریسرچ دلنا (سبز: لندینگ اصلی، آبی: لندینگ دسته/محصول، زرد: بلاگ)، نقشه کلمات، کلاسترها، شکاف محتوایی، کنیبالیزیشن، رقبا، ایده‌های بیشتر، دسته‌بندی و حذف‌شده‌ها.</p>
+		<p class="qtb-small qtb-muted" style="margin:0">خلاصه، یک شیت برای هر پیلار به سبک کیورد ریسرچ (بخش‌ها، هر صفحه با کلماتش و جمع حجم؛ سبز لندینگ، آبی آرشیو، نارنجی محصول، زرد مقاله)، نقشه صفحات (هر صفحه و همه کلماتش) و کلمات حذف‌شده و پارکینگ.</p>
 		<a class="qtb-btn is-primary" href="<?php echo esc_url( $dl( 'research' ) ); ?>"><?php echo qtb_icon( 'download', 16 ); // phpcs:ignore ?> دانلود اکسل</a>
-	</div>
-	<div class="qtb-card">
-		<h3><?php echo qtb_icon( 'calendar', 20 ); // phpcs:ignore ?> فایل تقویم محتوا</h3>
-		<p class="qtb-small qtb-muted" style="margin:0">ساختار تقویم آژانس: M1، M2… با Writing Guide، پنج Out Link و پنج In Link، Status، Publish Date؛ به‌علاوه Ideas، B keyword و بریف هر مقاله.</p>
-		<a class="qtb-btn is-primary" href="<?php echo esc_url( $dl( 'calendar' ) ); ?>"><?php echo qtb_icon( 'download', 16 ); // phpcs:ignore ?> دانلود اکسل</a>
 	</div>
 	<div class="qtb-card">
 		<h3><?php echo qtb_icon( 'list', 20 ); // phpcs:ignore ?> CSV نقشه کلمات</h3>
@@ -47,7 +42,7 @@ endif;
 	<?php elseif ( ! qtb_google_connected() ) : ?>
 		<p class="qtb-note is-warn"><?php echo qtb_icon( 'alert', 16 ); // phpcs:ignore ?><span>اتصال گوگل تنظیم نشده است؛ از «تنظیمات و اتصال‌ها» سرویس اکانت را وارد کنید یا اتصال سکان را فعال کنید.</span></p>
 	<?php else : ?>
-		<p class="qtb-muted qtb-small">هر دو فایل با همان رنگ‌بندی، ادغام سلول‌ها، فیلتر، کشوی وضعیت و چک‌باکس در تب‌های جدید شیت نوشته می‌شوند. تب‌هایی که قبلاً قطب‌نما نوشته جایگزین می‌شوند؛ تب‌های تیم دست نمی‌خورند.</p>
+		<p class="qtb-muted qtb-small">کیورد ریسرچ با همان طراحی، ادغام سلول‌ها و فیلترها در تب‌های جدید شیت نوشته می‌شود. تب‌هایی که قبلاً قطب‌نما نوشته جایگزین می‌شوند؛ تب‌های تیم دست نمی‌خورند.</p>
 		<div class="qtb-inline">
 			<button type="button" class="qtb-btn is-primary" data-qtb-gsheet-go><?php echo qtb_icon( 'upload', 16 ); // phpcs:ignore ?> نوشتن در گوگل شیت</button>
 			<a class="qtb-btn is-ghost" href="<?php echo esc_url( 'https://docs.google.com/spreadsheets/d/' . $target . '/edit' ); ?>" target="_blank" rel="noopener">باز کردن شیت</a>

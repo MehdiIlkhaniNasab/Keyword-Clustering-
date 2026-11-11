@@ -106,6 +106,12 @@ class QTB_Xlsx_Styles {
 		if ( ! empty( $s['border'] ) ) {
 			$c  = '<color rgb="FF' . strtoupper( is_string( $s['border'] ) ? $s['border'] : 'D9D9D9' ) . '"/>';
 			$bd = $this->add( $this->borders, '<border><left style="thin">' . $c . '</left><right style="thin">' . $c . '</right><top style="thin">' . $c . '</top><bottom style="thin">' . $c . '</bottom><diagonal/></border>' );
+		} elseif ( ! empty( $s['bt'] ) || ! empty( $s['bb'] ) ) {
+			// Hairlines: only top and / or bottom («bt» / «bb» colors; «btm» / «bbm» medium weight).
+			$side = function ( $tag, $color, $medium ) {
+				return $color ? '<' . $tag . ' style="' . ( $medium ? 'medium' : 'thin' ) . '"><color rgb="FF' . strtoupper( $color ) . '"/></' . $tag . '>' : '<' . $tag . '/>';
+			};
+			$bd = $this->add( $this->borders, '<border><left/><right/>' . $side( 'top', $s['bt'] ?? '', ! empty( $s['btm'] ) ) . $side( 'bottom', $s['bb'] ?? '', ! empty( $s['bbm'] ) ) . '<diagonal/></border>' );
 		}
 		$nf = 0;
 		if ( ! empty( $s['fmt'] ) ) {
@@ -119,8 +125,8 @@ class QTB_Xlsx_Styles {
 			}
 		}
 		$align = '';
-		if ( ! empty( $s['h'] ) || ! empty( $s['v'] ) || ! empty( $s['wrap'] ) ) {
-			$align = '<alignment' . ( ! empty( $s['h'] ) ? ' horizontal="' . $s['h'] . '"' : '' ) . ' vertical="' . ( $s['v'] ?? 'center' ) . '"' . ( ! empty( $s['wrap'] ) ? ' wrapText="1"' : '' ) . ' readingOrder="2"/>';
+		if ( ! empty( $s['h'] ) || ! empty( $s['v'] ) || ! empty( $s['wrap'] ) || ! empty( $s['indent'] ) ) {
+			$align = '<alignment' . ( ! empty( $s['h'] ) ? ' horizontal="' . $s['h'] . '"' : '' ) . ' vertical="' . ( $s['v'] ?? 'center' ) . '"' . ( ! empty( $s['wrap'] ) ? ' wrapText="1"' : '' ) . ( ! empty( $s['indent'] ) ? ' indent="' . (int) $s['indent'] . '"' : '' ) . ' readingOrder="2"/>';
 		}
 		$xf = '<xf numFmtId="' . $nf . '" fontId="' . $fi . '" fillId="' . $fl . '" borderId="' . $bd . '" xfId="0"' . ( $nf ? ' applyNumberFormat="1"' : '' ) . ' applyFont="1"' . ( $fl ? ' applyFill="1"' : '' ) . ( $bd ? ' applyBorder="1"' : '' ) . ( $align ? ' applyAlignment="1">' . $align . '</xf>' : '/>' );
 		$this->xfs[]       = $xf;
@@ -249,7 +255,7 @@ function qtb_abs_range( $range ) {
  */
 function qtb_xlsx_sheet_xml( $sh, $styles ) {
 	$x     = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\n" . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">';
-	$x    .= '<sheetPr>' . ( ! empty( $sh['tab'] ) ? '<tabColor rgb="FF' . strtoupper( $sh['tab'] ) . '"/>' : '' ) . '</sheetPr>';
+	$x    .= '<sheetPr>' . ( ! empty( $sh['tab'] ) ? '<tabColor rgb="FF' . strtoupper( $sh['tab'] ) . '"/>' : '' ) . ( ! empty( $sh['fit'] ) ? '<pageSetUpPr fitToPage="1"/>' : '' ) . '</sheetPr>';
 	$x    .= '<sheetViews><sheetView workbookViewId="0"' . ( ! isset( $sh['rtl'] ) || $sh['rtl'] ? ' rightToLeft="1"' : '' ) . ( ! empty( $sh['grid'] ) ? '' : ' showGridLines="0"' ) . '>';
 	if ( ! empty( $sh['freeze'] ) && preg_match( '/^([A-Z]+)(\d+)$/', $sh['freeze'], $fm ) ) {
 		$col  = 0;
@@ -328,6 +334,8 @@ function qtb_xlsx_sheet_xml( $sh, $styles ) {
 		$x    .= '</hyperlinks>';
 		$rels .= '</Relationships>';
 	}
-	$x .= '<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/></worksheet>';
+	// Printed landscape, one page wide.
+	$x .= '<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.2" footer="0.2"/><pageSetup paperSize="9" orientation="landscape"' . ( ! empty( $sh['fit'] ) ? ' fitToWidth="1" fitToHeight="0"' : '' ) . '/>';
+	$x .= '</worksheet>';
 	return array( $x, $rels );
 }

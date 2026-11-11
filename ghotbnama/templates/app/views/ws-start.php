@@ -34,4 +34,5 @@ $input = qtb_data_get( $project['id'], 'input', array() );
 		<input type="file" name="file" accept=".xlsx,.csv,.tsv,.txt" required>
 		<button class="qtb-btn is-small" type="submit">بارگذاری فایل و شروع</button>
 	</form>
+	<p class="qtb-small qtb-muted" style="margin:8px 0 0">فایل می‌تواند فهرست ساده (کلمه | حجم) باشد، یا کیورد ریسرچی که خودتان کلاستر کرده‌اید: هر شیت یک پیلار، عنوان بخش بالا و برای هر کلاستر یک جفت ستون «کلمه | حجم». کلاسترهای شما قفل می‌مانند و فقط بقیه کلمات خوشه‌بندی می‌شوند.</p>
 </div>

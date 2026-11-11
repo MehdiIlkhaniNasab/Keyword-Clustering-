@@ -111,7 +111,6 @@ function qtb_project_tabs() {
 		'map'         => array( 'نقشه کلمات', 'list' ),
 		'gaps'        => array( 'فرصت‌ها و شکاف‌ها', 'gap' ),
 		'competitors' => array( 'رقبا', 'radar' ),
-		'calendar'    => array( 'تقویم محتوا', 'calendar' ),
 		'removed'     => array( 'حذف‌شده‌ها', 'filter' ),
 		'export'      => array( 'خروجی', 'download' ),
 		'settings'    => array( 'تنظیمات پروژه', 'settings' ),

@@ -11,7 +11,7 @@ defined( 'ABSPATH' ) || exit;
 	<div>
 		<p class="qtb-eyebrow"><?php echo qtb_icon( 'help', 14 ); // phpcs:ignore ?> راهنما</p>
 		<h1>قطب‌نما چطور کار می‌کند؟</h1>
-		<p class="qtb-muted">از فهرست خام کلمات تا ساختار سایت، اولویت فروش و تقویم محتوا.</p>
+		<p class="qtb-muted">از فهرست خام کلمات تا ساختار سایت، تحلیل رقبا و نقشه راه ۱۲ ماهه.</p>
 	</div>
 </div>
 

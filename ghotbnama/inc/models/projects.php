@@ -42,6 +42,7 @@ function qtb_project_defaults() {
 		'cr'             => (float) qtb_setting( 'def_cr', 1.5 ), // Conversion rate of commercial pages (%).
 		'aov'            => (float) qtb_setting( 'def_aov', 0 ),  // Average order value (Toman); 0 = from the store.
 		'gap_limit'      => 40,           // Clusters that get the AI gap analysis.
+		'export_comp'    => 0,            // «رقبا» sheet in the research file.
 	);
 }
 

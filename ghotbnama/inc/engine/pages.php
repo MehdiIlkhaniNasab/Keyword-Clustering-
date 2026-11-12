@@ -262,6 +262,17 @@ function qtb_page_decide( $c, $keywords, $idx, $profile = array() ) {
 		$out['reason']  = sprintf( 'سایت صفحه «%s» (%s) را دارد%s؛ همان آرشیو را هدف بگیرید.', $term[2], qtb_archive_types()[ $term[3] ] ?? '', $np ? sprintf( ' و %s محصول منطبق', qtb_num( $np ) ) : '' );
 		return $out;
 	}
+	// 7b. No Google results: the page type competitors rank with (Seo Signal files).
+	$cs = $c['comp_sig'] ?? null;
+	if ( $cs && ! $n ) {
+		$map = array( 'product' => array( 'product', '' ), 'brand' => array( 'archive', 'brand' ), 'tag' => array( 'archive', 'tag' ), 'category' => array( 'archive', 'category' ), 'article' => array( 'article', '' ) );
+		if ( isset( $map[ $cs['type'] ] ) ) {
+			$out['page']    = $map[ $cs['type'] ][0];
+			$out['archive'] = $map[ $cs['type'] ][1] ?: 'category';
+			$out['reason']  = sprintf( 'رقیب %s این جستجو را با صفحه %s گرفته (جایگاه %s)؛ همان نوع صفحه.', $cs['domain'], qtb_comp_type_labels()[ $cs['type'] ] ?? '', qtb_num( $cs['rank'] ) );
+			return $out;
+		}
+	}
 	// 8. Google wants product pages.
 	if ( $n && $prod >= 0.5 && $np <= 1 ) {
 		$out['page']   = 'product';

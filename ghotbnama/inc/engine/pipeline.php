@@ -194,11 +194,15 @@ function qtb_job_settle( $project_id, $key, $idle = 120 ) {
 	if ( $last && time() - $last < $idle ) {
 		return $job;
 	}
+	if ( 'job' === $key ) {
+		// The output build runs on request now; a build left half-way is dropped (the last result stays).
+		$job['error'] = 'ساخت خروجی نیمه‌کاره ماند و کنار گذاشته شد؛ از کارگاه دوباره «ساخت خروجی» بزنید.';
+		qtb_data_put( $project_id, $key, $job );
+		qtb_project_status( $project_id, qtb_data_get( $project_id, 'clusters', array() ) ? 'ready' : 'new' );
+		return $job;
+	}
 	qtb_job_pause( $job, 'stale', 'این اجرا نیمه‌کاره مانده است (صفحه بسته شد یا اجرا قطع شد). «ادامه همین مرحله» یا «لغو» را بزنید.' );
 	qtb_data_put( $project_id, $key, $job );
-	if ( 'job' === $key ) {
-		qtb_project_status( $project_id, 'paused' );
-	}
 	return $job;
 }
 

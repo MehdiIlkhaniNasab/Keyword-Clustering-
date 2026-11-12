@@ -505,7 +505,8 @@
 	$$( '[data-qtb-board]' ).forEach( function ( bd ) {
 		var tid = +bd.getAttribute( 'data-tid' );
 		var cls = [], tps = [];
-		try { cls = JSON.parse( bd.getAttribute( 'data-clusters' ) || '[]' ); tps = JSON.parse( bd.getAttribute( 'data-topics' ) || '[]' ); } catch ( e ) {}
+		var all = [];
+		try { cls = JSON.parse( bd.getAttribute( 'data-clusters' ) || '[]' ); tps = JSON.parse( bd.getAttribute( 'data-topics' ) || '[]' ); all = JSON.parse( bd.getAttribute( 'data-all' ) || '[]' ); } catch ( e ) {}
 		var dragKw = null;
 		var norm = function ( s ) { return String( s ).replace( /ي/g, 'ی' ).replace( /ك/g, 'ک' ).replace( /[\s‌]+/g, '' ).replace( /آ/g, 'ا' ); };
 		var liOf = function ( kw ) { return $( 'li[data-kw="' + kw + '"]', bd ); };
@@ -616,7 +617,7 @@
 		// Move popover.
 		var pop = null;
 		var closePop = function () { if ( pop ) { pop.remove(); pop = null; } };
-		document.addEventListener( 'click', function ( e ) { if ( pop && ! e.target.closest( '.qtb-pop' ) && ! e.target.closest( '[data-qtb-wsmove]' ) ) { closePop(); } } );
+		document.addEventListener( 'click', function ( e ) { if ( pop && ! e.target.closest( '.qtb-pop' ) && ! e.target.closest( '[data-qtb-wsmove]' ) && ! e.target.closest( '[data-qtb-clmenu]' ) ) { closePop(); } } );
 		var openMove = function ( btn, kw ) {
 			closePop();
 			var card = btn.closest( '.qtb-bd-cl' );
@@ -641,7 +642,10 @@
 				var q = norm( input.value.trim() );
 				var items = q ? [] : [ '<li><button type="button" data-to="new"><b>+ کلاستر جدید</b></button></li>', item( 'park', 'پارکینگ' ), item( 'remove', 'حذف' ) ];
 				cls.filter( function ( c ) { return c[ 0 ] !== mine && ( ! q || norm( c[ 1 ] ).indexOf( q ) > -1 ); } ).slice( 0, 60 ).forEach( function ( c ) { items.push( item( c[ 0 ], c[ 1 ], 'کلاستر' ) ); } );
-				tps.filter( function ( t ) { return ! q || norm( t[ 1 ] ).indexOf( q ) > -1; } ).slice( 0, 30 ).forEach( function ( t ) { items.push( item( 'topic:' + t[ 0 ], t[ 1 ], 'انتقال به موضوع دیگر' ) ); } );
+				if ( q ) {
+					all.filter( function ( c ) { return norm( c[ 2 ] ).indexOf( q ) > -1 || norm( c[ 3 ] ).indexOf( q ) > -1; } ).slice( 0, 40 ).forEach( function ( c ) { items.push( item( 'c:' + c[ 0 ] + ':' + c[ 1 ], c[ 2 ], 'پیلار ' + c[ 3 ] ) ); } );
+				}
+				tps.filter( function ( t ) { return ! q || norm( t[ 1 ] ).indexOf( q ) > -1; } ).slice( 0, 30 ).forEach( function ( t ) { items.push( item( 'topic:' + t[ 0 ], t[ 1 ], 'پیلار (بدون کلاستر)' ) ); } );
 				ul.innerHTML = items.join( '' );
 			};
 			input.addEventListener( 'input', render );
@@ -650,10 +654,81 @@
 				if ( ! bt ) { return; }
 				var to = bt.getAttribute( 'data-to' );
 				closePop();
-				if ( 'new' === to || 0 === to.indexOf( 'topic:' ) || ! card ) {
+				if ( 'new' === to || 0 === to.indexOf( 'topic:' ) || 0 === to.indexOf( 'c:' ) || ! card ) {
 					wsEdit( { op: 'move', tid: tid, kw: kw, to: to }, 'منتقل شد' );
 				} else {
 					move( kw, to );
+				}
+			} );
+			render();
+			input.focus();
+		};
+
+		// Cluster menu: move to another pillar (and section) or merge into any cluster.
+		var openClMenu = function ( btn, cid ) {
+			closePop();
+			pop = document.createElement( 'div' );
+			pop.className = 'qtb-pop is-wide';
+			pop.innerHTML = '<div class="qtb-seg qtb-pop-tabs"><button type="button" class="is-active" data-m="move">انتقال به پیلار</button><button type="button" data-m="merge">ادغام با کلاستر</button></div><input type="search" placeholder="جستجو…"><ul></ul>';
+			document.body.appendChild( pop );
+			var r = btn.getBoundingClientRect();
+			pop.style.top = ( window.scrollY + r.bottom + 6 ) + 'px';
+			pop.style.left = Math.max( 8, window.scrollX + r.left - 260 ) + 'px';
+			var ul = $( 'ul', pop ), input = $( 'input', pop ), mode = 'move';
+			var mine = cls.filter( function ( c ) { return c[ 0 ] !== cid; } ).map( function ( c ) { return [ tid, c[ 0 ], c[ 1 ], 'همین پیلار' ]; } );
+			var li = function ( attrs, label, sub ) {
+				var b = document.createElement( 'button' );
+				b.type = 'button';
+				Object.keys( attrs ).forEach( function ( k ) { b.setAttribute( k, attrs[ k ] ); } );
+				b.appendChild( document.createTextNode( label ) );
+				if ( sub ) { var s = document.createElement( 'small' ); s.className = 'qtb-muted'; s.textContent = sub; b.appendChild( s ); }
+				return '<li>' + b.outerHTML + '</li>';
+			};
+			var render = function () {
+				var q = norm( input.value.trim() );
+				var items = [];
+				if ( 'move' === mode ) {
+					tps.filter( function ( t ) { return ! q || norm( t[ 1 ] ).indexOf( q ) > -1; } ).forEach( function ( t ) { items.push( li( { 'data-tt': t[ 0 ] }, t[ 1 ], 'پیلار' ) ); } );
+					items.push( li( { 'data-tt': 'new' }, '+ پیلار جدید…', '' ) );
+				} else {
+					mine.concat( all ).filter( function ( c ) { return ! q || norm( c[ 2 ] ).indexOf( q ) > -1 || norm( c[ 3 ] ).indexOf( q ) > -1; } ).slice( 0, 60 ).forEach( function ( c ) { items.push( li( { 'data-mt': c[ 0 ], 'data-mc': c[ 1 ] }, c[ 2 ], c[ 3 ] ) ); } );
+				}
+				ul.innerHTML = items.join( '' ) || '<li class="qtb-muted qtb-small" style="padding:6px">موردی نیست</li>';
+			};
+			$$( '.qtb-pop-tabs button', pop ).forEach( function ( b ) {
+				b.addEventListener( 'click', function () {
+					mode = b.getAttribute( 'data-m' );
+					$$( '.qtb-pop-tabs button', pop ).forEach( function ( x ) { x.classList.toggle( 'is-active', x === b ); } );
+					render();
+					input.focus();
+				} );
+			} );
+			input.addEventListener( 'input', render );
+			ul.addEventListener( 'click', function ( ev ) {
+				var b = ev.target.closest( 'button' );
+				if ( ! b ) { return; }
+				var tt = b.getAttribute( 'data-tt' );
+				if ( tt ) {
+					closePop();
+					var go = function ( to ) {
+						var sec = ( window.prompt( 'بخش مقصد در آن پیلار (خالی = همان بخش فعلی):', '' ) || '' ).trim();
+						wsEdit( { op: 'cluster_move', tid: tid, cid: cid, to_tid: +to, section: sec }, 'کلاستر به پیلار دیگر رفت' );
+					};
+					if ( 'new' === tt ) {
+						var name = ( window.prompt( 'نام پیلار جدید:', '' ) || '' ).trim();
+						if ( ! name ) { return; }
+						wsEdit( { op: 'topic_new', name: name }, null, true ).then( function ( d ) { if ( d && d.tid ) { go( d.tid ); } } );
+					} else {
+						go( tt );
+					}
+					return;
+				}
+				var mt = b.getAttribute( 'data-mt' );
+				if ( mt ) {
+					closePop();
+					if ( window.confirm( 'این کلاستر در «' + b.firstChild.textContent + '» ادغام شود؟' ) ) {
+						wsEdit( { op: 'cluster_merge_into', tid: tid, cid: cid, to_tid: +mt, to_cid: +b.getAttribute( 'data-mc' ) }, 'کلاسترها ادغام شدند' );
+					}
 				}
 			} );
 			render();
@@ -672,7 +747,7 @@
 				$( '[data-qtb-drawer-title]', drawer ).textContent = d.k + ' · ' + fa( d.v );
 				var m = d.meta || {};
 				var conf = { high: 'اطمینان زیاد', mid: 'اطمینان متوسط', low: 'اطمینان کم' };
-				var why = { serp: 'اشتراک نتایج گوگل', lexical: 'شباهت معنایی (بدون سرپ)', ai: 'جابه‌جایی هوش مصنوعی', user: 'تصمیم شما' };
+				var why = { serp: 'اشتراک نتایج گوگل', lexical: 'شباهت معنایی (بدون سرپ)', ai: 'جابه‌جایی هوش مصنوعی', user: 'تصمیم شما', comp: 'رقیب هر دو را با یک صفحه گرفته' };
 				if ( m.conf ) { body.appendChild( el( 'p', 'qtb-small', ( conf[ m.conf ] || '' ) + ' · ' + ( why[ m.why ] || '' ) ) ); }
 				if ( m.ai && m.ai.reason ) { body.appendChild( el( 'p', 'qtb-note is-ai', 'هوش مصنوعی: ' + m.ai.reason ) ); }
 				( d.shared || [] ).forEach( function ( s ) {
@@ -683,6 +758,18 @@
 					box.appendChild( ul );
 					body.appendChild( box );
 				} );
+				if ( d.comp && d.comp.length ) {
+					body.appendChild( el( 'h4', '', 'رقبا (سئو سیگنال)' ) );
+					var cu = el( 'ul', 'qtb-ev-comp' );
+					d.comp.forEach( function ( h ) {
+						var li = el( 'li', h.same ? 'is-same' : '' );
+						li.appendChild( el( 'b', '', h.domain + ' · جایگاه ' + fa( h.rank ) ) );
+						li.appendChild( el( 'small', 'qtb-muted', ' ' + h.type + ( h.same ? ' — همان صفحه‌ای که سر کلاستر را هم دارد' : '' ) ) );
+						li.appendChild( el( 'div', 'qtb-ltr qtb-small', h.page ) );
+						cu.appendChild( li );
+					} );
+					body.appendChild( cu );
+				}
 				if ( ! d.serp.length ) {
 					body.appendChild( el( 'p', 'qtb-muted qtb-small', 'نتایج گوگل این کلمه گرفته نشده (سرویس سرپ وصل نیست، حالت رایگان، یا سقف سرپ پروژه).' ) );
 					return;
@@ -749,6 +836,13 @@
 				openMove( t, +t.getAttribute( 'data-qtb-wsmove' ) );
 			} else if ( ( t = e.target.closest( '[data-qtb-ev]' ) ) ) {
 				evidence( +t.getAttribute( 'data-qtb-ev' ) );
+			} else if ( ( t = e.target.closest( '[data-qtb-clmenu]' ) ) ) {
+				openClMenu( t, +t.getAttribute( 'data-qtb-clmenu' ) );
+			} else if ( e.target.closest( '[data-qtb-publish]' ) ) {
+				var pb = e.target.closest( '[data-qtb-publish]' );
+				pb.disabled = true;
+				pb.textContent = 'در حال به‌روزرسانی…';
+				api( 'ws/publish/' + wsPid ).then( function ( d ) { return buildOut( d.status ); } ).then( function () { toast( 'خروجی به‌روز شد.' ); reloadKeepScroll(); } ).catch( function ( err ) { pb.disabled = false; toast( err.message, true ); } );
 			} else if ( ( t = e.target.closest( '[data-qtb-secrename]' ) ) ) {
 				var from = t.getAttribute( 'data-qtb-secrename' );
 				var to = ( window.prompt( 'نام جدید بخش:', from ) || '' ).trim();
@@ -848,16 +942,80 @@
 		}
 	} );
 
+	// Competitors.
+	$$( '[data-qtb-compup]' ).forEach( function ( f ) {
+		f.addEventListener( 'submit', function ( e ) {
+			e.preventDefault();
+			var fd = new FormData( f );
+			fd.append( 'act', 'upload' );
+			var b = $( 'button', f );
+			b.disabled = true;
+			b.textContent = 'در حال خواندن…';
+			api( 'comp/' + f.getAttribute( 'data-qtb-compup' ), fd, true ).then( function ( d ) { toast( d.msg ); setTimeout( reloadKeepScroll, 700 ); } ).catch( function ( err ) { b.disabled = false; b.textContent = 'بارگذاری رقیب'; toast( err.message, true ); } );
+		} );
+	} );
+	document.addEventListener( 'click', function ( e ) {
+		var b = e.target.closest( '[data-qtb-compai], [data-qtb-compdel]' );
+		if ( ! b ) { return; }
+		var up = $( '[data-qtb-compup]' );
+		var del = b.hasAttribute( 'data-qtb-compdel' );
+		var dom = b.getAttribute( del ? 'data-qtb-compdel' : 'data-qtb-compai' );
+		if ( del && ! window.confirm( 'رقیب ' + dom + ' حذف شود؟' ) ) { return; }
+		b.disabled = true;
+		if ( ! del ) { b.textContent = 'در حال تحلیل… (تا ۲ دقیقه)'; }
+		api( 'comp/' + up.getAttribute( 'data-qtb-compup' ), { act: del ? 'delete' : 'ai', domain: dom } ).then( function ( d ) { toast( d.msg ); reloadKeepScroll(); } ).catch( function ( err ) { b.disabled = false; toast( err.message, true ); } );
+	} );
+	document.addEventListener( 'change', function ( e ) {
+		if ( e.target.matches( '[data-qtb-compexport]' ) ) {
+			var up = $( '[data-qtb-compup]' );
+			api( 'comp/' + up.getAttribute( 'data-qtb-compup' ), { act: 'export', on: e.target.checked ? 1 : 0 } ).then( function ( d ) { toast( d.msg ); } ).catch( function ( err ) { toast( err.message, true ); } );
+		}
+	} );
+	$$( '[data-qtb-gap]' ).forEach( function ( box ) {
+		var boxes = function () { return $$( '[data-qtb-gapk]', box ); };
+		var sync = function () {
+			var n = boxes().filter( function ( c ) { return c.checked; } ).length;
+			var bar = $( '[data-qtb-gapbar]', box );
+			if ( bar ) { bar.hidden = ! n; $( '[data-n]', bar ).textContent = fa( n ); }
+		};
+		box.addEventListener( 'change', function ( e ) {
+			if ( e.target.matches( '[data-qtb-gapall]' ) ) { boxes().forEach( function ( c ) { c.checked = e.target.checked; } ); }
+			sync();
+		} );
+		box.addEventListener( 'click', function ( e ) {
+			var b = e.target.closest( '[data-qtb-gapadd]' );
+			if ( ! b || ! wsPid ) { return; }
+			var lines = boxes().filter( function ( c ) { return c.checked; } ).map( function ( c ) { return c.getAttribute( 'data-qtb-gapk' ) + '\t' + c.getAttribute( 'data-v' ); } );
+			if ( ! lines.length ) { return; }
+			var fd = new FormData();
+			fd.append( 'text', lines.join( '\n' ) );
+			b.disabled = true;
+			wsBusy( true );
+			api( 'ws/add/' + wsPid, fd, true ).then( function ( d ) {
+				toast( d.msg );
+				if ( d.status ) { wsLoop( Promise.resolve( d.status ) ); } else { wsBusy( false ); b.disabled = false; }
+			} ).catch( function ( err ) { wsBusy( false ); b.disabled = false; toast( err.message, true ); } );
+		} );
+	} );
+
+	// The output build continues in slices until done.
+	function buildOut( st ) {
+		if ( ! st || st.done ) { return Promise.resolve( st ); }
+		if ( st.error ) { return Promise.reject( new Error( st.error ) ); }
+		return api( 'tick/' + wsPid ).then( buildOut );
+	}
+
 	// Final.
 	document.addEventListener( 'click', function ( e ) {
 		var b = e.target.closest( '[data-qtb-finalize]' );
-		if ( ! b || ! window.confirm( 'کیورد ریسرچ و تقویم از موضوع‌ها ساخته شود؟ نتیجه قبلی تب‌های پروژه جایگزین می‌شود.' ) ) { return; }
+		if ( ! b || ! window.confirm( 'کیورد ریسرچ از موضوع‌ها ساخته شود؟ نتیجه قبلی جایگزین می‌شود.' ) ) { return; }
 		var inc = $( '[data-qtb-include-ready]' );
 		b.disabled = true;
+		b.textContent = 'در حال ساخت…';
 		api( 'ws/finalize/' + wsPid, { include_ready: inc && inc.checked ? 1 : 0 } ).then( function ( d ) {
-			toast( fa( d.clusters ) + ' کلاستر از ' + fa( d.topics ) + ' موضوع وارد شد؛ ادامه ساخت در نمای کلی…' );
-			setTimeout( function () { location.href = b.getAttribute( 'data-url' ); }, 900 );
-		} ).catch( function ( err ) { b.disabled = false; toast( err.message, true ); } );
+			toast( fa( d.clusters || 0 ) + ' صفحه از ' + fa( d.topics || 0 ) + ' موضوع؛ در حال ساخت خروجی…' );
+			return buildOut( d.status );
+		} ).then( function () { location.href = b.getAttribute( 'data-url' ); } ).catch( function ( err ) { b.disabled = false; toast( err.message, true ); } );
 	} );
 
 	// ---- Settings tests ----

@@ -34,8 +34,8 @@ $counts = array(
 		<?php if ( ! empty( $result['clusters'] ) ) : ?>
 			<a class="qtb-btn" href="<?php echo esc_url( add_query_arg( '_wpnonce', wp_create_nonce( 'wp_rest' ), rest_url( 'ghotbnama/v1/download/' . $project['id'] . '/research' ) ) ); ?>"><?php echo qtb_icon( 'download', 16 ); // phpcs:ignore ?> کیورد ریسرچ (اکسل)</a>
 		<?php endif; ?>
-		<a class="qtb-btn" href="<?php echo esc_url( qtb_project_url( $project['id'], 'overview', array( 'run' => 1 ) ) ); ?>#run" title="همه مراحل یک‌جا و بدون بازبینی؛ برای کار دقیق از «کارگاه کلاسترینگ» استفاده کنید"><?php echo qtb_icon( 'play', 16 ); // phpcs:ignore ?> اجرای سریع (بدون کارگاه)</a>
-		<form method="post" style="display:inline" onsubmit="return confirm('پروژه «<?php echo esc_js( $project['name'] ); ?>» و همه کلمات، کلاسترها، کارگاه و تقویمش حذف شود؟ این کار برگشت ندارد. (گوگل شیت دست نمی‌خورد)');">
+		<a class="qtb-btn" href="<?php echo esc_url( qtb_project_url( $project['id'], 'workshop' ) ); ?>"><?php echo qtb_icon( 'layers', 16 ); // phpcs:ignore ?> کارگاه کلاسترینگ</a>
+		<form method="post" style="display:inline" onsubmit="return confirm('پروژه «<?php echo esc_js( $project['name'] ); ?>» و همه کلمات، کلاسترها، کارگاه و رقبایش حذف شود؟ این کار برگشت ندارد. (گوگل شیت دست نمی‌خورد)');">
 			<?php qtb_form_fields( 'delete_project', array( 'project_id' => $project['id'] ) ); ?>
 			<button class="qtb-btn is-ghost is-danger" type="submit" title="حذف پروژه"><?php echo qtb_icon( 'trash', 16 ); // phpcs:ignore ?> حذف پروژه</button>
 		</form>
@@ -49,13 +49,13 @@ $counts = array(
 <?php
 if ( 'settings' === $tab ) {
 	qtb_view( 'project-form', array( 'project' => $project ) );
-} elseif ( ! in_array( $tab, array( 'overview', 'export', 'workshop' ), true ) && empty( $result['clusters'] ) ) {
+} elseif ( ! in_array( $tab, array( 'overview', 'export', 'workshop', 'competitors' ), true ) && empty( $result['clusters'] ) && ! ( 'clusters' === $tab && qtb_ws_get( $project['id'] )['topics'] ) ) {
 	?>
 	<div class="qtb-empty">
 		<?php echo qtb_icon( 'compass', 40 ); // phpcs:ignore ?>
-		<h2>هنوز خوشه‌بندی اجرا نشده</h2>
-		<p>از «نمای کلی» کلمات را از گوگل شیت بخوانید یا فایل بارگذاری کنید و اجرای خوشه‌بندی را بزنید.</p>
-		<a class="qtb-btn is-primary" href="<?php echo esc_url( qtb_project_url( $project['id'] ) ); ?>">رفتن به نمای کلی</a>
+		<h2>هنوز خروجی ساخته نشده</h2>
+		<p>در «کارگاه کلاسترینگ» کلمات را دریافت و غربال کنید، موضوع‌ها را بسازید و بازبینی کنید؛ بعد «خروجی نهایی».</p>
+		<a class="qtb-btn is-primary" href="<?php echo esc_url( qtb_project_url( $project['id'], 'workshop' ) ); ?>">رفتن به کارگاه</a>
 	</div>
 	<?php
 } else {

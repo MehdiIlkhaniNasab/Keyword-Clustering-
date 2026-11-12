@@ -768,6 +768,8 @@ function qtb_ws_topic_cluster( $project, &$job ) {
 			$groups[]  = $g;
 		}
 	}
+	// Same page in a competitor's site (Seo Signal files): free evidence that two groups are one page.
+	$groups   = qtb_comp_merge_groups( $project, $sub, $groups, $tser, (int) $project['cfg']['strictness'] );
 	$clusters = array();
 	$own      = qtb_project_domain( $project );
 	foreach ( $groups as $g ) {
@@ -840,6 +842,7 @@ function qtb_ws_decide_pages( $project, $ws, $kws, $clusters ) {
 	$profile = qtb_project_profile( $project );
 	foreach ( $clusters as &$c ) {
 		if ( empty( $c['locked_page'] ) ) {
+			$c['comp_sig']    = qtb_comp_page_signal( $project, $kws, $c );
 			$d                = qtb_page_decide( $c, $kws, $idx, $profile );
 			$c['page']        = $d['page'];
 			$c['archive']     = 'archive' === $d['page'] ? $d['archive'] : '';
@@ -1178,6 +1181,7 @@ function qtb_ws_topic_finish( $project, &$job ) {
 	);
 	$t['status']         = 'ready';
 	$t['fresh']          = 0;
+	$ws['dirty']         = 1;
 	$ws['topics'][ $ti ] = $t;
 	$ws['stage']         = 'review';
 	qtb_ws_put( $pid, $ws );
@@ -1264,6 +1268,23 @@ function qtb_ws_edit( $project, $e ) {
 		qtb_ws_put( $pid, $ws );
 		return true;
 	}
+	if ( 'topic_new' === $op ) {
+		$name = qtb_mb_cut( sanitize_text_field( (string) ( $e['name'] ?? '' ) ), 40 );
+		if ( '' === $name ) {
+			return new WP_Error( 'qtb_ws', 'نام پیلار خالی است.' );
+		}
+		foreach ( $ws['topics'] as $x ) {
+			if ( qtb_key( $x['name'] ) === qtb_key( $name ) ) {
+				return array( 'ok' => true, 'tid' => (int) $x['id'] );
+			}
+		}
+		$nt             = qtb_ws_new_topic( $ws, $name, array(), $project );
+		$nt['status']   = 'ready';
+		$ws['topics'][] = $nt;
+		$ws['dirty']    = 1;
+		qtb_ws_put( $pid, $ws );
+		return array( 'ok' => true, 'tid' => (int) $nt['id'] );
+	}
 	if ( 'topic_merge' === $op ) {
 		$ids = array_map( 'intval', (array) ( $e['ids'] ?? array() ) );
 		$ki  = qtb_ws_topic_index( $ws, $ids[0] ?? 0 );
@@ -1333,6 +1354,25 @@ function qtb_ws_edit( $project, $e ) {
 				$kws[ $i ]['tl'] = 1;
 				$kws[ $i ]['tn'] = 'تصمیم ' . $who;
 				$to_name         = 'park' === $to ? 'پارکینگ' : 'حذف';
+			} elseif ( preg_match( '/^c:(\d+):(\d+)$/', $to, $mt ) && (int) $mt[1] !== (int) $t['id'] ) {
+				$oi = qtb_ws_topic_index( $ws, (int) $mt[1] );
+				$oc = null;
+				foreach ( null !== $oi ? $ws['topics'][ $oi ]['clusters'] : array() as $k => $c ) {
+					if ( (int) $c['id'] === (int) $mt[2] ) {
+						$oc = $k;
+					}
+				}
+				if ( null === $oc ) {
+					return new WP_Error( 'qtb_ws', 'کلاستر مقصد پیدا نشد.' );
+				}
+				$t['kws']                                            = array_values( array_diff( $t['kws'], array( $i ) ) );
+				$ws['topics'][ $oi ]['kws'][]                        = $i;
+				$ws['topics'][ $oi ]['clusters'][ $oc ]['kws'][]     = $i;
+				$ws['topics'][ $oi ]['clusters'][ $oc ]['meta'][ $i ] = array( 'conf' => 'high', 'shared' => -1, 'alt' => null, 'alt_shared' => 0, 'why' => 'user' );
+				$ws['topics'][ $oi ]['clusters'][ $oc ]['locked']    = 1;
+				$ws['topics'][ $oi ]['clusters']                     = qtb_ws_tidy( $kws, $ws['topics'][ $oi ]['clusters'] );
+				$to_name = $ws['topics'][ $oi ]['clusters'][ $oc ]['name'] ?? '';
+				$to_name = '«' . $ws['topics'][ $oi ]['name'] . '» › ' . $to_name;
 			} elseif ( 0 === strpos( $to, 'topic:' ) ) {
 				$oi = qtb_ws_topic_index( $ws, (int) substr( $to, 6 ) );
 				if ( null === $oi ) {
@@ -1431,6 +1471,64 @@ function qtb_ws_edit( $project, $e ) {
 		case 'mode':
 			$t['mode'] = 'single' === ( $e['mode'] ?? '' ) ? 'single' : 'batch';
 			break;
+		case 'cluster_move': // {cid, to_tid, section?}: the whole cluster goes to another pillar.
+			$ci = $cl( $e['cid'] ?? -1 );
+			$oi = qtb_ws_topic_index( $ws, (int) ( $e['to_tid'] ?? 0 ) );
+			if ( null === $ci || null === $oi || $oi === $ti ) {
+				return new WP_Error( 'qtb_ws', 'کلاستر یا پیلار مقصد پیدا نشد.' );
+			}
+			$c           = $t['clusters'][ $ci ];
+			$c['locked'] = 1;
+			if ( isset( $e['section'] ) && '' !== trim( (string) $e['section'] ) ) {
+				$c['section']        = qtb_mb_cut( sanitize_text_field( (string) $e['section'] ), 50 );
+				$c['locked_section'] = 1;
+			}
+			array_splice( $t['clusters'], $ci, 1 );
+			$t['kws']                        = array_values( array_diff( $t['kws'], $c['kws'] ) );
+			$ws['topics'][ $oi ]['kws']      = array_values( array_unique( array_merge( $ws['topics'][ $oi ]['kws'], $c['kws'] ) ) );
+			$ws['topics'][ $oi ]['clusters'][] = $c;
+			$ws['topics'][ $oi ]['clusters'] = qtb_ws_tidy( $kws, $ws['topics'][ $oi ]['clusters'] );
+			if ( 'new' === $ws['topics'][ $oi ]['status'] && ! array_diff( $ws['topics'][ $oi ]['kws'], array_merge( ...array_map( function ( $x ) {
+				return $x['kws'];
+			}, $ws['topics'][ $oi ]['clusters'] ) ) ) ) {
+				$ws['topics'][ $oi ]['status'] = 'ready';
+			}
+			foreach ( $c['kws'] as $i ) {
+				$ws['corrections'][] = array( 'k' => $kws[ $i ]['k'], 'from' => $t['name'], 'to' => 'پیلار «' . $ws['topics'][ $oi ]['name'] . '»', 'by' => $who, 'at' => qtb_now() );
+			}
+			$ws['corrections'] = array_slice( $ws['corrections'], -80 );
+			break;
+		case 'cluster_merge_into': // {cid, to_tid, to_cid}: into a cluster of this or another pillar.
+			$ci = $cl( $e['cid'] ?? -1 );
+			$oi = qtb_ws_topic_index( $ws, (int) ( $e['to_tid'] ?? 0 ) );
+			if ( null === $ci || null === $oi ) {
+				return new WP_Error( 'qtb_ws', 'کلاستر مقصد پیدا نشد.' );
+			}
+			$oc = null;
+			foreach ( $ws['topics'][ $oi ]['clusters'] as $k => $x ) {
+				if ( (int) $x['id'] === (int) ( $e['to_cid'] ?? -1 ) ) {
+					$oc = $k;
+				}
+			}
+			if ( null === $oc || ( $oi === $ti && $oc === $ci ) ) {
+				return new WP_Error( 'qtb_ws', 'کلاستر مقصد پیدا نشد.' );
+			}
+			$c = $t['clusters'][ $ci ];
+			foreach ( $c['kws'] as $i ) {
+				$ws['corrections'][] = array( 'k' => $kws[ $i ]['k'], 'from' => $c['name'], 'to' => $ws['topics'][ $oi ]['clusters'][ $oc ]['name'], 'by' => $who, 'at' => qtb_now() );
+			}
+			$ws['corrections'] = array_slice( $ws['corrections'], -80 );
+			$t['metrics']['user_changes'] = (int) ( $t['metrics']['user_changes'] ?? 0 ) + count( $c['kws'] );
+			$ws['topics'][ $oi ]['clusters'][ $oc ]['kws']    = array_merge( $ws['topics'][ $oi ]['clusters'][ $oc ]['kws'], $c['kws'] );
+			$ws['topics'][ $oi ]['clusters'][ $oc ]['meta']   = (array) $ws['topics'][ $oi ]['clusters'][ $oc ]['meta'] + (array) $c['meta'];
+			$ws['topics'][ $oi ]['clusters'][ $oc ]['locked'] = 1;
+			$t['clusters'][ $ci ]['kws']                      = array();
+			if ( $oi !== $ti ) {
+				$t['kws']                   = array_values( array_diff( $t['kws'], $c['kws'] ) );
+				$ws['topics'][ $oi ]['kws'] = array_values( array_unique( array_merge( $ws['topics'][ $oi ]['kws'], $c['kws'] ) ) );
+				$ws['topics'][ $oi ]['clusters'] = qtb_ws_tidy( $kws, $ws['topics'][ $oi ]['clusters'] );
+			}
+			break;
 		case 'section': // {cid, section}: the cluster moves to another (or a new) section.
 			$ci = $cl( $e['cid'] ?? -1 );
 			if ( null === $ci ) {
@@ -1467,6 +1565,118 @@ function qtb_ws_edit( $project, $e ) {
 	if ( null !== $ti ) {
 		$ws['topics'][ $ti ]['clusters'] = qtb_ws_tidy( $kws, $ws['topics'][ $ti ]['clusters'] );
 	}
+	$ws['dirty'] = 1;
+	qtb_data_put( $pid, 'keywords', $kws );
+	qtb_ws_put( $pid, $ws );
+	return true;
+}
+
+/**
+ * Publish the workshop into the result (research file, page map, tabs) and wait for it:
+ * after edits on the board the output follows without a manual «build» step.
+ *
+ * @return array|WP_Error job status
+ */
+function qtb_ws_publish_sync( $project, $budget = 50, $include_ready = null ) {
+	$ws  = qtb_ws_get( $project['id'] );
+	$res = qtb_ws_finalize( $project, null !== $include_ready ? (bool) $include_ready : ( ! isset( $ws['final_ready'] ) || ! empty( $ws['final_ready'] ) ) );
+	if ( is_wp_error( $res ) ) {
+		return $res;
+	}
+	$t0 = microtime( true );
+	do {
+		$job = qtb_pipeline_tick( $project['id'], 20 );
+		$st  = qtb_job_status( $job );
+	} while ( ! $st['done'] && ! $st['error'] && empty( $st['paused'] ) && microtime( true ) - $t0 < $budget );
+	return $st;
+}
+
+/**
+ * The output must be rebuilt (the board or the competitors changed).
+ */
+function qtb_ws_mark_dirty( $pid ) {
+	$ws = qtb_ws_get( $pid );
+	if ( ! empty( $ws['finalized'] ) ) {
+		$ws['dirty'] = 1;
+		qtb_ws_put( $pid, $ws );
+	}
+}
+
+/**
+ * Publish only when the board changed since the last output.
+ */
+function qtb_ws_publish_if_dirty( $project ) {
+	$ws = qtb_ws_get( $project['id'] );
+	if ( empty( $ws['dirty'] ) || empty( $ws['topics'] ) || empty( $ws['finalized'] ) ) {
+		return null;
+	}
+	return qtb_ws_publish_sync( $project );
+}
+
+/**
+ * A project built before the workshop (or by the quick run): its result becomes workshop
+ * pillars and locked clusters, so there is one place to edit everything.
+ */
+function qtb_ws_from_result( $project ) {
+	$pid      = $project['id'];
+	$ws       = qtb_ws_get( $pid );
+	$clusters = qtb_data_get( $pid, 'clusters', array() );
+	$pillars  = qtb_data_get( $pid, 'pillars', array() );
+	$kws      = qtb_data_get( $pid, 'keywords', array() );
+	if ( $ws['topics'] || ! $clusters || ! $pillars ) {
+		return false;
+	}
+	$by_id = array();
+	foreach ( $clusters as $c ) {
+		$by_id[ $c['id'] ] = $c;
+	}
+	foreach ( $kws as &$kw ) {
+		if ( ! isset( $kw['ws'] ) ) {
+			$kw['ws'] = 'keep';
+			$kw['tr'] = 'ok';
+			$kw['tn'] = '';
+		}
+	}
+	unset( $kw );
+	foreach ( $pillars as $p ) {
+		$topic           = qtb_ws_new_topic( $ws, $p['name'], array(), $project );
+		$topic['status'] = 'approved';
+		foreach ( $p['sections'] as $s ) {
+			foreach ( $s['clusters'] as $cid ) {
+				$c = $by_id[ $cid ] ?? null;
+				if ( ! $c || ! $c['kws'] ) {
+					continue;
+				}
+				$topic['clusters'][] = array(
+					'id'             => $ws['next_cid']++,
+					'name'           => $c['name'],
+					'kws'            => array_values( array_map( 'intval', $c['kws'] ) ),
+					'vol'            => (int) $c['vol'],
+					'core'           => $c['core'] ?? array(),
+					'meta'           => array_fill_keys( $c['kws'], array( 'conf' => 'high', 'shared' => -1, 'alt' => null, 'alt_shared' => 0, 'why' => 'user' ) ),
+					'serp'           => $c['serp'] ?? null,
+					'serp_kw'        => null,
+					'intent'         => $c['intent'] ?? 'm',
+					'page'           => $c['page'],
+					'archive'        => $c['archive'] ?? '',
+					'page_reason'    => (string) ( $c['page_reason'] ?? '' ),
+					'section'        => $s['name'],
+					'locked'         => 1,
+					'locked_page'    => 1,
+					'locked_section' => 1,
+					'locked_name'    => ! empty( $c['locked_name'] ) ? 1 : 0,
+				);
+				$topic['kws'] = array_merge( $topic['kws'], array_map( 'intval', $c['kws'] ) );
+			}
+		}
+		if ( $topic['clusters'] ) {
+			$ws['topics'][] = $topic;
+		}
+	}
+	$ws['stage']       = 'review';
+	$ws['finalized']   = (string) ( qtb_data_get( $pid, 'meta', array() )['built'] ?? qtb_now() );
+	$ws['final_ready'] = 1;
+	$ws['dirty']       = 0;
 	qtb_data_put( $pid, 'keywords', $kws );
 	qtb_ws_put( $pid, $ws );
 	return true;
@@ -1498,6 +1708,7 @@ function qtb_ws_evidence( $project, $tid, $i ) {
 		}, array_slice( (array) $s['organic'], 0, 10 ) ) : array(),
 		'meta'   => $own ? ( $own['meta'][ $i ] ?? null ) : null,
 		'shared' => array(),
+		'comp'   => qtb_comp_evidence( $project, $kws, (int) $i, $own ? ( $own['kws'][0] === (int) $i ? ( $own['kws'][1] ?? null ) : $own['kws'][0] ) : null ),
 	);
 	if ( $own && $s ) {
 		$head = $own['kws'][0] === (int) $i ? ( $own['kws'][1] ?? null ) : $own['kws'][0];
@@ -1557,7 +1768,10 @@ function qtb_ws_finalize( $project, $include_ready = false ) {
 	}
 	qtb_data_put( $pid, 'removed', $removed );
 	qtb_data_put( $pid, 'clusters_wip', $clusters );
-	$ws['finalized'] = qtb_now();
+	qtb_data_put( $pid, 'ws_final', array( 'ok' => true, 'topics' => $used, 'clusters' => count( $clusters ) ) );
+	$ws['finalized']   = qtb_now();
+	$ws['final_ready'] = $include_ready ? 1 : 0;
+	$ws['dirty']       = 0;
 	qtb_ws_put( $pid, $ws );
 	qtb_pipeline_start( $project, 'upload', 'structure', array( 'ws' => 1 ) );
 	return array( 'ok' => true, 'topics' => $used, 'clusters' => count( $clusters ) );

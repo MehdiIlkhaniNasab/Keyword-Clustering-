@@ -16,7 +16,7 @@ $google   = qtb_google_conf();
 	<div>
 		<p class="qtb-eyebrow"><?php echo qtb_icon( 'compass', 14 ); // phpcs:ignore ?> قطب‌نما</p>
 		<h1>کیورد کلاسترینگ فروش‌محور</h1>
-		<p class="qtb-muted">کلمات را بدهید؛ پیلار، کلاستر، نوع صفحه، اولویت فروش، شکاف محتوایی و تقویم محتوا تحویل بگیرید.</p>
+		<p class="qtb-muted">کلمات را بدهید؛ پیلار، کلاستر، نوع صفحه، تحلیل رقبا و نقشه راه ۱۲ ماهه تحویل بگیرید.</p>
 	</div>
 	<div class="qtb-actions">
 		<a class="qtb-btn is-primary" href="<?php echo esc_url( qtb_url( 'new' ) ); ?>"><?php echo qtb_icon( 'plus', 16 ); // phpcs:ignore ?> پروژه جدید</a>

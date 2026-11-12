@@ -109,7 +109,6 @@ function qtb_project_tabs() {
 		'workshop'    => array( 'کارگاه کلاسترینگ', 'layers' ),
 		'clusters'    => array( 'پیلارها و کلاسترها', 'compass' ),
 		'map'         => array( 'نقشه کلمات', 'list' ),
-		'gaps'        => array( 'فرصت‌ها و شکاف‌ها', 'gap' ),
 		'competitors' => array( 'رقبا', 'radar' ),
 		'removed'     => array( 'حذف‌شده‌ها', 'filter' ),
 		'export'      => array( 'خروجی', 'download' ),

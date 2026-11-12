@@ -81,6 +81,10 @@ function qtb_ws_memory_text( $project, $ws, $topic_id = null ) {
 	if ( $corr ) {
 		$out .= "\n## اصلاح‌های اخیر مدیر سئو (الگو بگیر)\n" . implode( "\n", $corr ) . "\n";
 	}
+	$comp = qtb_comp_memory( $project['id'] );
+	if ( $comp ) {
+		$out .= "\n## رقبا (از کلمات رتبه‌دارشان در گوگل)\n" . implode( "\n", $comp ) . "\n";
+	}
 	$approved = array();
 	foreach ( (array) ( $ws['topics'] ?? array() ) as $t ) {
 		if ( 'approved' !== $t['status'] || $t['id'] === $topic_id ) {

@@ -17,7 +17,7 @@ $ti     = qtb_ws_topic_index( $ws, $tid );
 $t      = $ws['topics'][ $ti ];
 $states = qtb_ws_topic_states();
 $conf_l = array( 'high' => 'اطمینان زیاد', 'mid' => 'اطمینان متوسط', 'low' => 'اطمینان کم' );
-$why_l  = array( 'serp' => 'اشتراک نتایج گوگل', 'lexical' => 'شباهت معنایی (بدون سرپ)', 'ai' => 'جابه‌جایی هوش مصنوعی', 'user' => 'تصمیم شما' );
+$why_l  = array( 'serp' => 'اشتراک نتایج گوگل', 'lexical' => 'شباهت معنایی (بدون سرپ)', 'ai' => 'جابه‌جایی هوش مصنوعی', 'user' => 'تصمیم شما', 'comp' => 'رقیب هر دو را با یک صفحه گرفته' );
 $act_l  = array( 'move' => 'انتقال به', 'new' => 'کلاستر جدید', 'remove' => 'حذف', 'park' => 'پارکینگ' );
 $cl_js  = array();
 foreach ( $t['clusters'] as $c ) {
@@ -30,6 +30,16 @@ foreach ( $ws['topics'] as $o ) {
 	}
 }
 $names = array_column( $t['clusters'], 'name', 'id' );
+// Clusters of the other pillars (to move a keyword into, or merge a cluster with).
+$all_js = array();
+foreach ( $ws['topics'] as $o ) {
+	if ( (int) $o['id'] === (int) $tid ) {
+		continue;
+	}
+	foreach ( $o['clusters'] as $oc ) {
+		$all_js[] = array( (int) $o['id'], (int) $oc['id'], $oc['name'], $o['name'] );
+	}
+}
 $aside = array( 'park' => array(), 'remove' => array() );
 foreach ( $t['kws'] as $i ) {
 	$st = $kws[ $i ]['ws'] ?? 'keep';
@@ -62,6 +72,9 @@ $chip = function ( $i, $c ) use ( $kws, $conf_l, $why_l, $act_l, $names ) {
 	$tip  = array();
 	if ( $c ) {
 		$tip[] = ( $conf_l[ $conf ] ?? '' ) . ' · ' . ( $why_l[ $meta['why'] ?? '' ] ?? '' );
+		if ( ! empty( $meta['comp'] ) ) {
+			$tip[] = 'شاهد رقیب: ' . $meta['comp'];
+		}
 		if ( isset( $meta['shared'] ) && $meta['shared'] >= 0 && 'serp' === ( $meta['why'] ?? '' ) ) {
 			$tip[] = 'نتایج مشترک با سر کلاستر: ' . qtb_num( $meta['shared'] );
 		}
@@ -92,7 +105,10 @@ $chip = function ( $i, $c ) use ( $kws, $conf_l, $why_l, $act_l, $names ) {
 	<?php
 };
 ?>
-<div class="qtb-board" data-qtb-board="<?php echo esc_attr( $project['id'] ); ?>" data-tid="<?php echo esc_attr( $tid ); ?>" data-clusters="<?php echo esc_attr( wp_json_encode( $cl_js, JSON_UNESCAPED_UNICODE ) ); ?>" data-topics="<?php echo esc_attr( wp_json_encode( $tp_js, JSON_UNESCAPED_UNICODE ) ); ?>">
+<div class="qtb-board" data-qtb-board="<?php echo esc_attr( $project['id'] ); ?>" data-tid="<?php echo esc_attr( $tid ); ?>" data-clusters="<?php echo esc_attr( wp_json_encode( $cl_js, JSON_UNESCAPED_UNICODE ) ); ?>" data-topics="<?php echo esc_attr( wp_json_encode( $tp_js, JSON_UNESCAPED_UNICODE ) ); ?>" data-all="<?php echo esc_attr( wp_json_encode( $all_js, JSON_UNESCAPED_UNICODE ) ); ?>">
+	<?php if ( ! empty( $ws['finalized'] ) && ! empty( $ws['dirty'] ) && qtb_can() ) : ?>
+		<div class="qtb-note is-warn qtb-dirty"><?php echo qtb_icon( 'refresh', 16 ); // phpcs:ignore ?><span>تغییرات تازه هنوز در فایل خروجی نیست. با دانلود یا نوشتن در گوگل شیت خودکار اعمال می‌شود، یا همین حالا:</span> <button type="button" class="qtb-btn is-small is-primary" data-qtb-publish>به‌روزرسانی خروجی</button></div>
+	<?php endif; ?>
 
 	<div class="qtb-panel qtb-bd-head">
 		<div class="qtb-panel-head" style="margin:0">
@@ -100,7 +116,7 @@ $chip = function ( $i, $c ) use ( $kws, $conf_l, $why_l, $act_l, $names ) {
 				<h2 style="margin:0"><a class="qtb-muted" href="<?php echo esc_url( $url( 'topics' ) ); ?>">موضوع‌ها</a> / <?php echo esc_html( $t['name'] ); ?> <span class="qtb-chip is-ts-<?php echo esc_attr( $t['status'] ); ?>"><?php echo esc_html( $states[ $t['status'] ] ?? '' ); ?></span></h2>
 				<p class="qtb-small qtb-muted" style="margin:4px 0 0">
 					<?php echo esc_html( sprintf( '%s کلاستر · %s کلمه · %s با اطمینان کم · %s پیشنهاد اعمال‌نشده هوش مصنوعی', qtb_num( count( $t['clusters'] ) ), qtb_num( array_sum( array_map( 'count', array_column( $t['clusters'], 'kws' ) ) ) ), qtb_num( $low ), qtb_num( $sug ) ) ); ?>
-					<?php if ( $m ) : ?> · <?php echo esc_html( sprintf( 'روش %s، %s ثانیه، %s دلار', 'single' === $m['mode'] ? 'تک‌تک' : 'دسته‌ای', qtb_num( $m['seconds'] ), qtb_num( $m['ai_cost'], 3 ) ) ); ?><?php endif; ?>
+					<?php if ( ! empty( $m['mode'] ) ) : ?> · <?php echo esc_html( sprintf( 'روش %s، %s ثانیه، %s دلار', 'single' === $m['mode'] ? 'تک‌تک' : 'دسته‌ای', qtb_num( $m['seconds'] ), qtb_num( $m['ai_cost'], 3 ) ) ); ?><?php endif; ?>
 				</p>
 			</div>
 			<span class="qtb-inline">
@@ -172,6 +188,7 @@ $chip = function ( $i, $c ) use ( $kws, $conf_l, $why_l, $act_l, $names ) {
 						<small><?php echo esc_html( qtb_intents()[ $c['intent'] ] ?? '' ); ?></small>
 					</div>
 					<div class="qtb-inline" style="flex-wrap:nowrap">
+						<button type="button" class="qtb-icon-btn" data-qtb-clmenu="<?php echo esc_attr( $c['id'] ); ?>" title="انتقال به پیلار دیگر یا ادغام با کلاستری در هر پیلار"><?php echo qtb_icon( 'layers', 15 ); // phpcs:ignore ?></button>
 						<button type="button" class="qtb-icon-btn" data-qtb-wsrename="<?php echo esc_attr( $c['id'] ); ?>" title="تغییر نام"><?php echo qtb_icon( 'edit', 15 ); // phpcs:ignore ?></button>
 						<button type="button" class="qtb-icon-btn qtb-lock" data-qtb-wslock="<?php echo esc_attr( $c['id'] ); ?>" data-on="<?php echo ! empty( $c['locked'] ) ? 1 : 0; ?>" title="<?php echo ! empty( $c['locked'] ) ? 'قفل است: پردازش دوباره آن را تغییر نمی‌دهد (برای باز کردن بزنید)' : 'قفل کردن: در پردازش دوباره دست نخورد'; ?>"><?php echo qtb_icon( 'shield', 15 ); // phpcs:ignore ?></button>
 						<input type="checkbox" data-qtb-pick="<?php echo esc_attr( $c['id'] ); ?>" title="انتخاب برای ادغام">

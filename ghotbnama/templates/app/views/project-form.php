@@ -107,7 +107,7 @@ if ( $is_new ) :
 		<p class="qtb-note"><?php echo qtb_icon( 'help', 16 ); // phpcs:ignore ?><span>اگر به سایت دسترسی نباشد این بخش بی‌صدا کنار گذاشته می‌شود و بقیه تحلیل کامل انجام می‌شود؛ فقط نگاشت به صفحات موجود و تخمین فروش از روی قیمت محصولات حذف می‌شود.</span></p>
 	</div>
 
-	<div class="qtb-panel">
+	<div class="qtb-panel" hidden><?php // Calendar settings: kept for old projects, no longer part of the output. ?>
 		<h2><?php echo qtb_icon( 'calendar', 18 ); // phpcs:ignore ?> تقویم محتوا</h2>
 		<div class="qtb-grid-4">
 			<label>تعداد ماه<input type="number" name="months" min="1" max="12" value="<?php echo esc_attr( (int) $cfg['months'] ); ?>"></label>

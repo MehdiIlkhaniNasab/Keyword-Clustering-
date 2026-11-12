@@ -240,6 +240,7 @@ function qtb_ws_add_assign( $project, &$job, $deadline ) {
 		}
 		$names[] = $ws['topics'][ $ti ]['name'] . ' (' . qtb_num( $n ) . ')';
 	}
+	$ws['dirty'] = 1;
 	qtb_ws_put( $pid, $ws );
 	foreach ( $kws as &$kw ) {
 		unset( $kw['fresh'] );

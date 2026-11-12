@@ -27,6 +27,7 @@ add_action( 'rest_api_init', function () {
 		return is_numeric( $v );
 	} ) );
 	register_rest_route( $ns, '/run/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_run', 'permission_callback' => $perm, 'args' => $id ) );
+	register_rest_route( $ns, '/comp/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_comp', 'permission_callback' => $perm, 'args' => $id ) );
 	register_rest_route( $ns, '/control/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_control', 'permission_callback' => $perm, 'args' => $id ) );
 	register_rest_route( $ns, '/tick/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_tick', 'permission_callback' => $perm, 'args' => $id ) );
 	register_rest_route( $ns, '/status/(?P<id>\d+)', array( 'methods' => 'GET', 'callback' => 'qtb_rest_status', 'permission_callback' => $perm, 'args' => $id ) );
@@ -72,6 +73,85 @@ function qtb_rest_run( $req ) {
 	}
 	qtb_pipeline_start( $p, $source, $from );
 	return qtb_job_status( qtb_pipeline_tick( $p['id'], 18 ) );
+}
+
+/**
+ * Competitors: upload Seo Signal files, delete, AI analysis, export option.
+ */
+function qtb_rest_comp( $req ) {
+	$p = qtb_rest_project( $req );
+	if ( is_wp_error( $p ) ) {
+		return $p;
+	}
+	$act = (string) $req['act'];
+	if ( 'upload' === $act ) {
+		$files = $req->get_file_params();
+		$list  = array();
+		if ( ! empty( $files['files'] ) && is_array( $files['files']['name'] ?? null ) ) {
+			foreach ( $files['files']['name'] as $n => $name ) {
+				$list[] = array( 'name' => $name, 'tmp_name' => $files['files']['tmp_name'][ $n ], 'error' => $files['files']['error'][ $n ], 'size' => $files['files']['size'][ $n ] );
+			}
+		} elseif ( ! empty( $files['file'] ) ) {
+			$list[] = $files['file'];
+		}
+		if ( ! $list ) {
+			return new WP_Error( 'qtb_comp', 'فایلی دریافت نشد.', array( 'status' => 400 ) );
+		}
+		$ok  = array();
+		$bad = array();
+		foreach ( $list as $f ) {
+			if ( ! empty( $f['error'] ) || (int) $f['size'] > 30 * MB_IN_BYTES ) {
+				$bad[] = $f['name'] . ': فایل خوانده نشد';
+				continue;
+			}
+			$rec = qtb_comp_add( $p['id'], (string) file_get_contents( $f['tmp_name'] ) );
+			if ( is_wp_error( $rec ) ) {
+				$bad[] = $f['name'] . ': ' . $rec->get_error_message();
+			} else {
+				$ok[] = $rec['domain'] . ' (' . qtb_num( count( $rec['kws'] ) ) . ' کلمه)';
+			}
+		}
+		if ( ! $ok ) {
+			return new WP_Error( 'qtb_comp', implode( ' | ', $bad ), array( 'status' => 400 ) );
+		}
+		qtb_ws_mark_dirty( $p['id'] );
+		return array( 'ok' => true, 'msg' => 'رقیب اضافه شد: ' . implode( '، ', $ok ) . ( $bad ? ' — خطا: ' . implode( ' | ', $bad ) : '' ) );
+	}
+	$domain = strtolower( (string) $req['domain'] );
+	$comps  = qtb_comps( $p['id'] );
+	$at     = null;
+	foreach ( $comps as $n => $c ) {
+		if ( $c['domain'] === $domain ) {
+			$at = $n;
+		}
+	}
+	if ( 'export' === $act ) {
+		$cfg               = $p['cfg'];
+		$cfg['export_comp'] = empty( $req['on'] ) ? 0 : 1;
+		qtb_project_save( array( 'cfg' => $cfg ), $p['id'] );
+		return array( 'ok' => true, 'msg' => $cfg['export_comp'] ? 'شیت «رقبا» در خروجی می‌آید.' : 'شیت «رقبا» از خروجی برداشته شد.' );
+	}
+	if ( null === $at ) {
+		return new WP_Error( 'qtb_comp', 'رقیب پیدا نشد.', array( 'status' => 404 ) );
+	}
+	if ( 'delete' === $act ) {
+		array_splice( $comps, $at, 1 );
+		qtb_comps_put( $p['id'], $comps );
+		return array( 'ok' => true, 'msg' => 'رقیب حذف شد.' );
+	}
+	if ( 'ai' === $act ) {
+		qtb_raise_limits( 260 );
+		$res = qtb_ai_comp_report( $p, $comps[ $at ] );
+		if ( is_wp_error( $res ) ) {
+			$res->add_data( array( 'status' => 400 ) );
+			return $res;
+		}
+		$comps[ $at ]['ai']    = $res;
+		$comps[ $at ]['ai_at'] = qtb_now();
+		qtb_data_put( $p['id'], 'comps', $comps );
+		return array( 'ok' => true, 'msg' => 'تحلیل ' . $domain . ' آماده شد.' );
+	}
+	return new WP_Error( 'qtb_comp', 'دستور نامعتبر.', array( 'status' => 400 ) );
 }
 
 /**
@@ -183,6 +263,7 @@ function qtb_rest_gsheet( $req ) {
 	qtb_raise_limits( 120 );
 	if ( ! empty( $req['restart'] ) ) {
 		qtb_data_delete( $p['id'], array( 'gsheet_job' ) );
+		qtb_ws_publish_if_dirty( $p );
 	}
 	$res = qtb_gsheet_write( $p, microtime( true ) + 20 );
 	if ( is_wp_error( $res ) ) {
@@ -200,6 +281,8 @@ function qtb_rest_download( $req ) {
 	if ( is_wp_error( $p ) ) {
 		return $p;
 	}
+	qtb_raise_limits( 120 );
+	qtb_ws_publish_if_dirty( $p );
 	if ( ! qtb_data_get( $p['id'], 'clusters', array() ) ) {
 		return new WP_Error( 'qtb_no_result', 'هنوز خوشه‌بندی اجرا نشده است.', array( 'status' => 400 ) );
 	}
@@ -290,6 +373,7 @@ add_action( 'rest_api_init', function () {
 	register_rest_route( $ns, '/ws/edit/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_edit', 'permission_callback' => $rev ) );
 	register_rest_route( $ns, '/ws/comment/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_comment', 'permission_callback' => $rev ) );
 	register_rest_route( $ns, '/ws/evidence/(?P<id>\d+)', array( 'methods' => 'GET', 'callback' => 'qtb_rest_ws_evidence', 'permission_callback' => $rev ) );
+	register_rest_route( $ns, '/ws/publish/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_publish', 'permission_callback' => $mng ) );
 	register_rest_route( $ns, '/ws/finalize/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_finalize', 'permission_callback' => $mng ) );
 } );
 
@@ -472,6 +556,23 @@ function qtb_rest_ws_evidence( $req ) {
 }
 
 /**
+ * Bring the board's edits into the output now.
+ */
+function qtb_rest_ws_publish( $req ) {
+	$p = qtb_rest_project( $req );
+	if ( is_wp_error( $p ) ) {
+		return $p;
+	}
+	qtb_raise_limits( 120 );
+	$st = qtb_ws_publish_sync( $p );
+	if ( is_wp_error( $st ) ) {
+		$st->add_data( array( 'status' => 400 ) );
+		return $st;
+	}
+	return array( 'ok' => (bool) $st['done'], 'msg' => $st['done'] ? 'خروجی به‌روز شد.' : ( $st['error'] ? $st['error'] : 'به‌روزرسانی خروجی ادامه دارد…' ), 'status' => $st );
+}
+
+/**
  * Finalize the workshop into the research (the pipeline continues from «structure»).
  */
 function qtb_rest_ws_finalize( $req ) {
@@ -479,11 +580,13 @@ function qtb_rest_ws_finalize( $req ) {
 	if ( is_wp_error( $p ) ) {
 		return $p;
 	}
-	$res = qtb_ws_finalize( $p, ! empty( $req['include_ready'] ) );
-	if ( is_wp_error( $res ) ) {
-		$res->add_data( array( 'status' => 400 ) );
-		return $res;
+	qtb_raise_limits( 120 );
+	$st = qtb_ws_publish_sync( $p, 45, ! empty( $req['include_ready'] ) );
+	if ( is_wp_error( $st ) ) {
+		$st->add_data( array( 'status' => 400 ) );
+		return $st;
 	}
-	$res['status'] = qtb_job_status( qtb_pipeline_tick( $p['id'], 15 ) );
+	$res           = qtb_data_get( $p['id'], 'ws_final', array() );
+	$res['status'] = $st;
 	return $res;
 }

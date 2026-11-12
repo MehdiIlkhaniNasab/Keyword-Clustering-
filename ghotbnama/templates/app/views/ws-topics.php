@@ -46,7 +46,7 @@ $vol    = function ( $t ) use ( $kws ) {
 				<td><span class="qtb-chip is-ts-<?php echo esc_attr( $t['status'] ); ?>"><?php echo esc_html( $states[ $t['status'] ] ?? $t['status'] ); ?></span>
 					<?php if ( ! empty( $t['fresh'] ) ) : ?><span class="qtb-chip is-fresh" title="کلمات جدید این موضوع هنوز خوشه‌بندی نشده‌اند؛ «پردازش دوباره» را بزنید">+<?php echo esc_html( qtb_num( $t['fresh'] ) ); ?> جدید</span><?php endif; ?></td>
 				<td><select data-qtb-tmode="<?php echo esc_attr( $t['id'] ); ?>" style="width:auto;min-height:32px;padding:2px 8px 2px 26px"><?php qtb_options( array( 'batch' => 'دسته‌ای', 'single' => 'تک‌تک' ), $t['mode'] ); ?></select></td>
-				<td class="qtb-small"><?php echo $m ? esc_html( sprintf( '%s · %s ثانیه · %s دلار · هوش مصنوعی %s تغییر · شما %s تغییر', 'single' === $m['mode'] ? 'تک‌تک' : 'دسته‌ای', qtb_num( $m['seconds'] ), qtb_num( $m['ai_cost'], 3 ), qtb_num( $m['ai_changes'] ), qtb_num( $m['user_changes'] ?? 0 ) ) ) : '—'; ?></td>
+				<td class="qtb-small"><?php echo ! empty( $m['mode'] ) ? esc_html( sprintf( '%s · %s ثانیه · %s دلار · هوش مصنوعی %s تغییر · شما %s تغییر', 'single' === $m['mode'] ? 'تک‌تک' : 'دسته‌ای', qtb_num( $m['seconds'] ), qtb_num( $m['ai_cost'], 3 ), qtb_num( $m['ai_changes'] ), qtb_num( $m['user_changes'] ?? 0 ) ) ) : '—'; ?></td>
 				<td class="qtb-nowrap">
 					<?php if ( 'approved' !== $t['status'] ) : ?>
 						<button type="button" class="qtb-btn is-small <?php echo 'new' === $t['status'] ? 'is-primary' : ''; ?>" data-qtb-wsgo="topic" data-tid="<?php echo esc_attr( $t['id'] ); ?>"><?php echo qtb_icon( 'play', 13 ); // phpcs:ignore ?> <?php echo 'new' === $t['status'] ? 'پردازش' : 'پردازش دوباره'; ?></button>

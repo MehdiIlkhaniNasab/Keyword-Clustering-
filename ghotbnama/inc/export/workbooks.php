@@ -394,6 +394,7 @@ function qtb_book_research( $project ) {
 					qtb_c( (int) $cl['vol'], array( 'b' => true, 'fmt' => '#,##0', 'h' => 'center', 'color' => qtb_xd( 'forest' ) ) ),
 					$cl['target'] ? qtb_c( rawurldecode( $cl['target']['url'] ), array( 'color' => '2C5684', 'size' => 9 ), $cl['target']['url'] ) : qtb_c( 'صفحه جدید', array( 'color' => qtb_xd( 'muted' ), 'size' => 9 ) ),
 					qtb_c( '' !== $title ? $title : '', array( 'wrap' => true, 'size' => 9.5 ) ),
+					qtb_c( 'فاز ' . qtb_fa( qtb_phase_of( $cl ) ), array( 'h' => 'center', 'b' => true, 'color' => qtb_xd( 'forest2' ) ) ),
 				);
 			}
 		}
@@ -414,10 +415,44 @@ function qtb_book_research( $project ) {
 			'حجم کل صفحه'      => array( 11, 'center' ),
 			'صفحه فعلی سایت'   => array( 30, '' ),
 			'عنوان پیشنهادی'   => array( 30, '' ),
+			'فاز اجرا'         => array( 9, 'center' ),
 		),
 		$rows,
 		qtb_xd( 'gold' )
 	);
+
+	// Competitors (optional).
+	$comps = qtb_comps( $project['id'] );
+	if ( $comps && ! empty( $project['cfg']['export_comp'] ) ) {
+		$lab  = qtb_comp_type_labels();
+		$cov  = qtb_comp_coverage( $project['id'] );
+		$rows = array();
+		foreach ( $comps as $c ) {
+			$st    = qtb_comp_stats( $c );
+			$cv    = $cov['by'][ $c['domain'] ] ?? array( 'n' => 0, 'vol' => 0 );
+			$types = array();
+			foreach ( array_slice( $st['types_traffic'], 0, 3, true ) as $ty => $tr ) {
+				$types[] = ( $lab[ $ty ] ?? $ty ) . ' ' . qtb_num( round( 100 * $tr / max( 1, $st['traffic'] ) ) ) . '٪';
+			}
+			$rows[] = array(
+				qtb_c( $c['domain'], array( 'b' => true, 'color' => qtb_xd( 'ink' ) ), $c['url'] ),
+				count( $c['kws'] ),
+				(int) $st['top3'],
+				(int) $st['traffic'],
+				(int) $cv['n'],
+				qtb_c( implode( '، ', $types ), array( 'size' => 9.5 ) ),
+				qtb_c( (string) ( $c['ai']['summary'] ?? '' ), array( 'wrap' => true, 'size' => 9.5 ) ),
+			);
+		}
+		$sheets[] = qtb_xtable( 'رقبا', 'رقبا  |  ' . $project['name'], 'از خروجی کلمات دامنه سئو سیگنال؛ ترافیک = حجم × نرخ کلیک جایگاه.', array( 'دامنه' => array( 24, '' ), 'کلمات رتبه‌دار' => array( 12, 'center' ), 'در ۳ نتیجه اول' => array( 12, 'center' ), 'ترافیک تخمینی ماهانه' => array( 14, 'center' ), 'از کلمات ما' => array( 11, 'center' ), 'ترافیک از چه صفحاتی' => array( 30, '' ), 'جمع‌بندی هوش مصنوعی' => array( 70, '' ) ), $rows, '674EA7' );
+		$rows = array();
+		foreach ( array_slice( qtb_comp_gap( $project['id'], 0 ), 0, 500 ) as $g ) {
+			$rows[] = array( qtb_c( $g['k'], array( 'color' => qtb_xd( 'ink' ) ) ), (int) $g['v'], (int) $g['n'], (int) $g['best'], $lab[ $g['type'] ] ?? '', qtb_c( implode( '، ', array_unique( array_column( $g['hits'], 0 ) ) ), array( 'size' => 9 ) ) );
+		}
+		if ( $rows ) {
+			$sheets[] = qtb_xtable( 'کلمات رقبا', 'کلماتی که رقبا دارند و پروژه ندارد', 'در ۱۰ نتیجه اول دست‌کم یک رقیب؛ مرتب بر اساس تعداد رقبا و حجم.', array( 'کلمه' => array( 34, '' ), 'حجم' => array( 10, 'center' ), 'رقبا' => array( 8, 'center' ), 'بهترین جایگاه' => array( 11, 'center' ), 'صفحه رقیب' => array( 12, 'center' ), 'دامنه‌ها' => array( 40, '' ) ), $rows, '8E7CC3' );
+		}
+	}
 
 	// 4. Removed and parked.
 	$rows    = array();

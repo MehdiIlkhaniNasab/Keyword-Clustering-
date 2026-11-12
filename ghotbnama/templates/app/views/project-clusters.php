@@ -9,6 +9,39 @@
 
 defined( 'ABSPATH' ) || exit;
 
+// One place to edit: the workshop's pillars (a result built before the workshop is brought in first).
+$ws = qtb_ws_get( $project['id'] );
+if ( ! $ws['topics'] && ! empty( $R['clusters'] ) && qtb_can() ) {
+	qtb_ws_from_result( $project );
+	$ws = qtb_ws_get( $project['id'] );
+}
+if ( $ws['topics'] ) {
+	$tid  = absint( $_GET['tid'] ?? 0 ); // phpcs:ignore
+	$live = array_values( array_filter( $ws['topics'], function ( $t ) {
+		return ! empty( $t['clusters'] );
+	} ) );
+	$ix   = qtb_ws_topic_index( $ws, $tid );
+	if ( null === $ix || ! $ws['topics'][ $ix ]['clusters'] ) {
+		$tid = $live ? (int) $live[0]['id'] : (int) $ws['topics'][0]['id'];
+	}
+	$kws = qtb_data_get( $project['id'], 'keywords', array() );
+	$url = function ( $s, $args = array() ) use ( $project ) {
+		return 'topic' === $s ? qtb_project_url( $project['id'], 'clusters', array( 'tid' => $args['tid'] ?? 0 ) ) : qtb_project_url( $project['id'], 'workshop', array_merge( array( 'ws' => $s ), $args ) );
+	};
+	?>
+	<nav class="qtb-pillar-tabs">
+		<?php foreach ( $ws['topics'] as $t ) : ?>
+			<?php if ( $t['clusters'] || (int) $t['id'] === $tid ) : ?>
+				<a class="<?php echo (int) $t['id'] === $tid ? 'is-active' : ''; ?>" href="<?php echo esc_url( $url( 'topic', array( 'tid' => $t['id'] ) ) ); ?>"><?php echo esc_html( $t['name'] ); ?><small><?php echo esc_html( qtb_num( count( $t['clusters'] ) ) . ' صفحه' ); ?></small></a>
+			<?php endif; ?>
+		<?php endforeach; ?>
+	</nav>
+	<?php
+	qtb_view( 'ws-job', array( 'project' => $project, 'job' => qtb_job_settle( $project['id'], 'ws_job' ) ) );
+	qtb_view( 'ws-topic', array( 'project' => $project, 'ws' => $ws, 'kws' => $kws, 'tid' => $tid, 'url' => $url ) );
+	return;
+}
+
 $kws   = $R['keywords'];
 $by_id = $R['by_id'];
 $q     = isset( $_GET['q'] ) ? sanitize_text_field( wp_unslash( $_GET['q'] ) ) : ''; // phpcs:ignore

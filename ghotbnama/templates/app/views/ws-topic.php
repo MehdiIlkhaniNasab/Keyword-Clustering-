@@ -17,7 +17,7 @@ $ti     = qtb_ws_topic_index( $ws, $tid );
 $t      = $ws['topics'][ $ti ];
 $states = qtb_ws_topic_states();
 $conf_l = array( 'high' => 'اطمینان زیاد', 'mid' => 'اطمینان متوسط', 'low' => 'اطمینان کم' );
-$why_l  = array( 'serp' => 'گوگل تأیید کرد: نتایج مشترک با صفحه', 'lexical' => 'شباهت معنایی (بدون سرپ)', 'ai' => 'جابه‌جایی هوش مصنوعی', 'user' => 'تصمیم شما', 'comp' => 'رقیب هر دو را با یک صفحه گرفته', 'facet' => 'همان ویژگی‌های صفحه', 'tail' => 'زیر آستانه، بدون شاهد گوگل' );
+$why_l  = array( 'serp' => 'گوگل تأیید کرد: نتایج مشترک با صفحه', 'lexical' => 'شباهت معنایی (بدون سرپ)', 'ai' => 'جابه‌جایی هوش مصنوعی', 'user' => 'تصمیم شما', 'comp' => 'رقیب هر دو را با یک صفحه گرفته', 'facet' => 'همان ویژگی‌های صفحه', 'tail' => 'کم‌حجم، بدون شاهد گوگل؛ به نزدیک‌ترین صفحه رفت', 'near' => 'کم‌حجم و شبیه هیچ صفحه‌ای نبود؛ به نزدیک‌ترین صفحه رفت', 'syn' => 'مترادف: نتایج گوگل تقریباً یکسان' );
 $facet  = 'facet' === ( $project['cfg']['engine'] ?? 'facet' ) || array_filter( $t['clusters'], function ( $c ) {
 	return ! empty( $c['fx'] );
 } );
@@ -245,6 +245,7 @@ $chip = function ( $i, $c, $n = 0 ) use ( $kws, $conf_l, $why_l, $act_l, $names,
 					</select>
 					<?php if ( ! empty( $c['own'] ) ) : ?><span class="qtb-chip is-own" title="از فایل شما؛ قفل است و دوباره خوشه‌بندی نمی‌شود. برای خوشه‌بندی دوباره، قفل را باز کنید و «پردازش دوباره» بزنید.">کلاستر شما</span><?php endif; ?>
 					<?php if ( ! empty( $c['page_ai'] ) ) : ?><span class="qtb-chip is-ai" title="<?php echo esc_attr( 'پیشنهاد اولیه قانون‌محور: ' . ( qtb_page_options()[ $c['page_ai']['from'] ] ?? $c['page_ai']['from'] ) ); ?>">نوع صفحه با هوش مصنوعی</span><?php endif; ?>
+					<?php if ( ! empty( $c['top3'] ) ) : ?><span class="qtb-chip is-serp" title="نوع ۳ نتیجه اول گوگل؛ ماهیت صفحه با این تعیین می‌شود"><?php echo esc_html( '۳ نتیجه اول: ' . $c['top3'] ); ?></span><?php endif; ?>
 					<?php if ( $c['serp'] ) : ?>
 						<span class="qtb-chip is-serp" title="<?php echo esc_attr( 'نوع نتایج: ' . implode( '، ', array_map( function ( $k, $v ) { return $k . ' ' . round( 100 * $v ) . '٪'; }, array_keys( (array) $c['serp']['types'] ), (array) $c['serp']['types'] ) ) ); ?>">گوگل ✓<?php echo ! empty( $c['serp']['own_pos'] ) ? ' · جایگاه ' . esc_html( qtb_num( $c['serp']['own_pos'] ) ) : ''; ?></span>
 					<?php endif; ?>

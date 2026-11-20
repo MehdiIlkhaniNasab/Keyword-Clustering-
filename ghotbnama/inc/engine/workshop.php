@@ -829,10 +829,10 @@ function qtb_ws_topic_pool( $t, $kws ) {
 /**
  * Options of the facet decision for a project.
  */
-function qtb_ws_fx_opts( $project, $serps ) {
+function qtb_ws_fx_opts( $project, $serps, $sub = null ) {
 	return array(
 		'pct'      => (float) ( $project['cfg']['split_pct'] ?? 10 ),
-		'floor'    => qtb_fx_floor( $project ),
+		'floor'    => qtb_fx_floor( $project, $sub ),
 		'need'     => (int) $project['cfg']['strictness'],
 		'serps'    => $serps,
 		'hubs'     => qtb_fx_hubs( $serps ),
@@ -854,7 +854,7 @@ function qtb_ws_topic_plan( $project, &$job ) {
 	list( $sub, $locked, $free ) = qtb_ws_topic_pool( $t, $kws );
 	$serps = array_intersect_key( qtb_data_get( $pid, 'serps', array() ), $sub );
 	$tree  = qtb_fx_nodes( $fx, $sub, $free, $locked );
-	$res   = qtb_fx_decide( $fx, $sub, $tree, array_merge( qtb_ws_fx_opts( $project, $serps ), array( 'plan_only' => true ) ) );
+	$res   = qtb_fx_decide( $fx, $sub, $tree, array_merge( qtb_ws_fx_opts( $project, $serps, $sub ), array( 'plan_only' => true ) ) );
 	$job['serp_want'] = $res['want'];
 	qtb_job_log( $job, sprintf( '%s کلمه در %s گره (ترکیب ویژگی)؛ %s کلمه برای تصمیم‌های مرزی نتیجه گوگل لازم دارد.', qtb_num( count( $sub ) ), qtb_num( count( $tree['nodes'] ) ), qtb_num( count( $res['want'] ) ) ) );
 	return true;
@@ -873,7 +873,7 @@ function qtb_ws_topic_fcluster( $project, &$job ) {
 	list( $sub, $locked, $free ) = qtb_ws_topic_pool( $t, $kws );
 	$serps = array_intersect_key( qtb_data_get( $pid, 'serps', array() ), $sub );
 	$tree  = qtb_fx_nodes( $fx, $sub, $free, $locked );
-	$res   = qtb_fx_decide( $fx, $sub, $tree, qtb_ws_fx_opts( $project, $serps ) );
+	$res   = qtb_fx_decide( $fx, $sub, $tree, qtb_ws_fx_opts( $project, $serps, $sub ) );
 	$own   = qtb_project_domain( $project );
 	$clusters = array();
 	$used     = array();
@@ -918,6 +918,8 @@ function qtb_ws_topic_fcluster( $project, &$job ) {
 		}
 	}
 	unset( $c );
+	// What Google shows in its top 3 decides the page type when it is clear.
+	$clusters = qtb_fx_pages_by_top3( $clusters, $sub, $serps );
 	$clusters = qtb_fx_assign_sections( $project, $sub, $clusters );
 	$ws['topics'][ $ti ]['clusters'] = qtb_sort( $clusters, 'vol' );
 	qtb_ws_put( $pid, $ws );
@@ -1313,7 +1315,7 @@ function qtb_ws_topic_ai_cl( $project, &$job, $deadline ) {
 				'page'     => $c['page'],
 				'archive'  => $c['archive'] ?? '',
 				'reason'   => (string) ( $c['page_reason'] ?? '' ),
-				'types'    => implode( '، ', array_slice( $types, 0, 4 ) ),
+				'types'    => ( ! empty( $c['top3'] ) ? '۳ نتیجه اول: ' . $c['top3'] . ' | ' : '' ) . implode( '، ', array_slice( $types, 0, 4 ) ),
 				'products' => (int) ( $c['store_match'] ?? 0 ),
 				'members'  => array_map( function ( $i ) use ( $kws ) {
 					return $kws[ $i ]['k'];
@@ -1341,7 +1343,7 @@ function qtb_ws_topic_ai_cl( $project, &$job, $deadline ) {
 				$c['section'] = $a['section'];
 			}
 			$rule = 0 === strpos( (string) ( $c['page_reason'] ?? '' ), 'قانون پروژه' );
-			if ( empty( $c['locked_page'] ) && ! $rule && isset( qtb_page_types()[ $a['page'] ] ) ) {
+			if ( empty( $c['locked_page'] ) && empty( $c['top3_lock'] ) && ! $rule && isset( qtb_page_types()[ $a['page'] ] ) ) {
 				if ( $a['page'] !== $c['page'] || ( 'archive' === $a['page'] && $a['archive'] && $a['archive'] !== ( $c['archive'] ?? '' ) ) ) {
 					$c['page_ai'] = array( 'from' => qtb_page_value( $c ) );
 					$c['page']    = $a['page'];
@@ -1700,6 +1702,7 @@ function qtb_ws_edit( $project, $e ) {
 			$t['clusters'][ $ci ]['locked'] = 1;
 			$nc = array( 'id' => $ws['next_cid']++, 'name' => $kws[ $move[0] ]['k'], 'kws' => $move, 'vol' => 0, 'core' => $kws[ $move[0] ]['core'], 'meta' => $meta, 'serp' => null, 'serp_kw' => null, 'intent' => qtb_group_intent( $kws, $move ), 'page' => 'archive', 'archive' => 'category', 'locked' => 1, 'fx' => array( 'key' => $node, 'facets' => $facets, 'info' => 'i' === $node[0], 'why' => 'user', 'ev' => null, 'review' => array(), 'virtual' => false ) );
 			$nc = qtb_ws_decide_pages( $project, $ws, $kws, array( qtb_ws_tidy( $kws, array( $nc ) )[0] ) )[0];
+			$nc = qtb_fx_pages_by_top3( array( $nc ), $kws, qtb_data_get( $pid, 'serps', array() ) )[0];
 			if ( 'i' === $node[0] && empty( $nc['locked_page'] ) && 'archive' === $nc['page'] ) {
 				$nc['page']    = 'article';
 				$nc['archive'] = '';

@@ -676,3 +676,4 @@ body.qtb-app { margin: 0; background: var(--paper); color: var(--ink); font: 14p
 .qtb-bd-cl.is-root > ul { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 18px; }
 @media (max-width: 900px) { .qtb-bd-cl.is-root { grid-column: auto; } .qtb-bd-cl.is-root > ul { grid-template-columns: 1fr; } }
 .qtb-wz-step.is-last::before { display: none; }
+.qtb-sg-dot.is-syn { background: #9B4FB8; } .qtb-sg-dot.is-near, .qtb-sg-dot.is-tail { background: #B9C4BE; }

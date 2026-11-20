@@ -201,7 +201,7 @@ function qtb_ai_facet_batch( $project, $ws, $fx, $batch, $kws ) {
 		"  info = نشانه نیت آموزشی و اطلاعاتی؛ کلمه مقاله بلاگ می‌شود (نگهداری، معنی، سایز، عکس، روش، تفاوت، بهترین…)\n" .
 		"  kind = نام محصول یا دسته اصلی کسب‌وکار (نه ویژگی آن)\n" .
 		"  other = ویژگی است ولی در هیچ نوعی جا نمی‌شود\n" .
-		"- canon: اگر این واژه املای دیگر یا مترادف واژه دیگری در همین فهرست است و برای این کسب‌وکار باید یک صفحه باشند، همان واژه اصلی را بنویس؛ وگرنه خود واژه. محتاط باش: فقط وقتی یکی کن که واقعاً یک صفحه باشند.\n" .
+		"- canon: اگر این واژه با واژه دیگری در همین فهرست یک مفهوم است، واژه اصلی (پرجستجوتر) را بنویس؛ وگرنه خود واژه. سه حالت: املای دیگر (کارتیه/کارتیر)، شکل دیگر همان واژه (چرمی/چرم)، و مترادف معنایی که مشتری با هر دو یک چیز را می‌خواهد (نازک/ظریف، اگر در این کسب‌وکار یک محصول‌اند). محتاط باش: دو ویژگی متفاوت (مثلاً دو رنگ، دو برند، زنانه/مردانه) هرگز یکی نمی‌شوند. گوگل هم بعداً مترادف‌ها را با نتایج بررسی می‌کند.\n" .
 		"اگر نوع ویژگی تازه‌ای لازم است، آن را در types اضافه کن: id (انگلیسی کوتاه و کوچک)، label (نام مفرد فارسی)، plural (نام بخش در ساختار سایت، جمع فارسی).\n\n" .
 		"## واژه‌ها\n" . implode( "\n", $lines );
 	$schema = array(
@@ -430,20 +430,28 @@ function qtb_fx_resolve( $fx, $t ) {
 // ---------------------------------------------------------------------------
 
 /**
- * Minimum volume of a page of its own (below it a node merges unless Google says it is
- * another search): the project setting, or automatically a quarter of «split_pct» of the
- * project's biggest keyword — small projects get a small floor, big ones a big one.
+ * Minimum volume of a page of its own (below it a keyword never gets a page; it joins
+ * the most similar or the nearest page): the project setting, or automatically half of
+ * «split_pct» of the topic's biggest keyword (5% at the default), and at least a tenth of
+ * «split_pct» of the project's biggest keyword (1%) so tiny topics stay small.
  */
-function qtb_fx_floor( $project ) {
+function qtb_fx_floor( $project, $sub = null ) {
 	$set = (int) ( $project['cfg']['min_page'] ?? 0 );
 	if ( $set > 0 ) {
 		return $set;
 	}
-	$max = 0;
+	$pct  = max( 1, (float) ( $project['cfg']['split_pct'] ?? 10 ) ) / 100;
+	$pmax = 0;
 	foreach ( qtb_ws_active( qtb_data_get( $project['id'], 'keywords', array() ) ) as $kw ) {
-		$max = max( $max, (int) $kw['v'] );
+		$pmax = max( $pmax, (int) $kw['v'] );
 	}
-	return (int) round( $max * max( 1, (float) ( $project['cfg']['split_pct'] ?? 10 ) ) / 100 / 4 );
+	$tmax = 0;
+	foreach ( null !== $sub ? $sub : array() as $kw ) {
+		$tmax = max( $tmax, (int) $kw['v'] );
+	}
+	// Half the threshold of the topic's biggest keyword, but never below a tenth of the
+	// threshold of the project's biggest one (tiny topics do not get pages of 25 searches).
+	return (int) round( max( $tmax * $pct / 2, $pmax * $pct / 10 ) );
 }
 
 /**
@@ -688,12 +696,41 @@ function qtb_fx_parent( $nodes, $key ) {
 }
 
 /**
- * Decide the tree, top-down: the main page first, then each node — fewer facets first —
- * against the page it would join (its parent's page: the parent itself when the parent
- * stayed a page, or the page the parent merged into). Default by the dynamic threshold;
- * Google (or, without a SERP, the competitors' ranking pages) decides both ways.
+ * Overlap of two keywords' top 10 (hubs excluded): [shared, shared within both top 3],
+ * or null without both SERPs.
+ */
+function qtb_fx_overlap( $serps, $hubs, $a, $b ) {
+	if ( empty( $serps[ $a ]['organic'] ) || empty( $serps[ $b ]['organic'] ) ) {
+		return null;
+	}
+	$n  = 0;
+	$t3 = 0;
+	foreach ( qtb_serp_shared_urls( $serps[ $a ], $serps[ $b ] ) as $u ) {
+		if ( isset( $hubs[ qtb_norm_url( $u['url'] ) ] ) ) {
+			continue;
+		}
+		++$n;
+		$t3 += $u['pa'] <= 3 && $u['pb'] <= 3 ? 1 : 0;
+	}
+	return array( $n, $t3 );
+}
+
+/**
+ * Assign every node to a page, the way an SEO manager does it by hand: biggest first;
+ * each node is compared with EVERY page it could belong to — all pages whose facets
+ * are a subset of its own (for «دستبند استیل کارتیر مردانه»: دستبند مردانه، دستبند
+ * کارتیر مردانه، دستبند استیل مردانه، دستبند استیل، دستبند کارتیر، دستبند) and the
+ * same-level pages that differ by one word of the same type (synonyms: نازک / ظریف).
  *
- * @param array $opts {pct, need, serps, hubs, comp_idx, comps, plan_only}
+ *  - Similar to a page (shared top-10 URLs, top-3 counted more; several keywords of
+ *    each side compared, the best pair wins) → joins the most similar page, any volume.
+ *  - Similar to nothing, volume at least the line (pct of the nearest page above it,
+ *    never below the topic floor) → a page of its own.
+ *  - Similar to nothing and smaller → never a page: joins the nearest page (most facets
+ *    in common, then the biggest), flagged for review when it is close to the line.
+ *  - No Google result: the competitors' ranking pages decide; nothing at all → the line.
+ *
+ * @param array $opts {pct, need, floor, serps, hubs, comp_idx, comps, plan_only}
  * @return array {groups: [...], want: int[] keyword indices whose SERP would settle a decision}
  */
 function qtb_fx_decide( $fx, $sub, $tree, $opts ) {
@@ -701,32 +738,35 @@ function qtb_fx_decide( $fx, $sub, $tree, $opts ) {
 	$pct   = max( 1, min( 60, (float) $opts['pct'] ) ) / 100;
 	$floor = max( 0, (int) ( $opts['floor'] ?? 0 ) );
 	$need  = max( 2, min( 7, (int) $opts['need'] ) );
+	$base  = max( 2, $need - 1 ); // Shared URLs for «similar» (3 at the default strictness).
 	$serps = (array) ( $opts['serps'] ?? array() );
 	$hubs  = (array) ( $opts['hubs'] ?? array() );
+	$cidx  = $opts['comp_idx'] ?? array();
+	$comps = $opts['comps'] ?? array();
 	$want  = array();
-	// Topic root: always a node (the main page), even without a keyword of its own.
+	$maxv  = function ( $info ) use ( $nodes, $sub ) {
+		$m = 0;
+		foreach ( $nodes as $n ) {
+			if ( $n['info'] === $info ) {
+				$m = max( $m, (int) $n['hv'] );
+			}
+		}
+		return $m;
+	};
+	// Roots: the topic's main page, and the blog's general article when there are learning searches.
 	if ( ! isset( $nodes['c:'] ) ) {
 		$nodes['c:'] = array( 'key' => 'c:', 'facets' => array(), 'info' => false, 'own' => array(), 'kws' => array(), 'vol' => 0, 'head' => null, 'hv' => 0, 'lock' => null );
 	}
 	if ( null === $nodes['c:']['head'] ) {
-		// Without a keyword equal to the base alone, the biggest keyword of the topic sets the scale.
-		$nodes['c:']['hv'] = $sub ? max( array_map( function ( $kw ) {
-			return (int) $kw['v'];
-		}, $sub ) ) : 0;
+		$nodes['c:']['hv'] = $maxv( false );
 	}
-	// Blog root: the general article of the topic, when the topic has learning searches.
-	$info_hv = 0;
-	foreach ( $nodes as $n ) {
-		if ( $n['info'] ) {
-			$info_hv = max( $info_hv, (int) $n['hv'] );
-		}
-	}
+	$info_hv = $maxv( true );
 	if ( $info_hv && ! isset( $nodes['i:'] ) ) {
 		$nodes['i:'] = array( 'key' => 'i:', 'facets' => array(), 'info' => true, 'own' => array(), 'kws' => array(), 'vol' => 0, 'head' => null, 'hv' => $info_hv, 'lock' => null );
 	} elseif ( isset( $nodes['i:'] ) && null === $nodes['i:']['head'] ) {
 		$nodes['i:']['hv'] = $info_hv;
 	}
-	// Static tree: parent of each node and the descendants that would ride along with it.
+	// Static tree only to estimate the demand a node would gather (its small descendants).
 	$parent = array();
 	$kids   = array();
 	foreach ( array_keys( $nodes ) as $key ) {
@@ -735,108 +775,187 @@ function qtb_fx_decide( $fx, $sub, $tree, $opts ) {
 			$kids[ $parent[ $key ] ][] = $key;
 		}
 	}
-	// Estimated page volume of a node: its own keywords and the descendants that are too
-	// small to stand alone under it (they would merge into it).
-	$est = function ( $key ) use ( &$est, $nodes, $kids, $pct ) {
+	$memo = array();
+	$est  = function ( $key ) use ( &$est, &$memo, $nodes, $kids, $floor ) {
+		if ( isset( $memo[ $key ] ) ) {
+			return $memo[ $key ];
+		}
 		$v = $nodes[ $key ]['vol'];
 		foreach ( (array) ( $kids[ $key ] ?? array() ) as $k ) {
 			$sv = $est( $k );
-			if ( $sv < $pct * max( 1, $nodes[ $key ]['hv'] ) ) {
+			if ( $sv < $floor ) {
 				$v += $sv;
 			}
 		}
-		return $v;
+		return $memo[ $key ] = $v;
 	};
 	$order = array_keys( $nodes );
-	usort( $order, function ( $a, $b ) use ( $nodes ) {
-		return count( $nodes[ $a ]['facets'] ) <=> count( $nodes[ $b ]['facets'] ) ?: $nodes[ $b ]['vol'] <=> $nodes[ $a ]['vol'];
+	usort( $order, function ( $a, $b ) use ( $nodes, $est ) {
+		$ra = 'c:' === $a || 'i:' === $a ? 0 : ( null !== $nodes[ $a ]['lock'] ? 1 : 2 );
+		$rb = 'c:' === $b || 'i:' === $b ? 0 : ( null !== $nodes[ $b ]['lock'] ? 1 : 2 );
+		return $ra <=> $rb ?: $est( $b ) <=> $est( $a ) ?: count( $nodes[ $a ]['facets'] ) <=> count( $nodes[ $b ]['facets'] );
 	} );
-	$page   = array(); // node key → key of the page it ends up in.
-	$meta   = array(); // keyword index → meta.
-	$why    = array(); // page key → why it is a page of its own.
-	$evs    = array(); // page key → evidence of the split.
-	$review = array(); // page key → node heads merged without evidence, close to the line.
+	$page    = array(); // node key → page key.
+	$members = array(); // page key → keyword indices (biggest first as they arrive).
+	$meta    = array();
+	$why     = array();
+	$evs     = array();
+	$review  = array();
+	// Up to $n keywords of a set that have a SERP (biggest first).
+	$reps = function ( $list, $n ) use ( $serps, $sub ) {
+		$out = array();
+		foreach ( $list as $i ) {
+			if ( ! empty( $serps[ $i ]['organic'] ) ) {
+				$out[] = $i;
+				if ( count( $out ) >= $n ) {
+					break;
+				}
+			}
+		}
+		return $out;
+	};
 	foreach ( $order as $key ) {
 		$n = $nodes[ $key ];
-		$pk = $parent[ $key ];
-		if ( 'c:' === $key || null !== $n['lock'] || null === $pk ) {
-			$page[ $key ] = $key;
-			$why[ $key ]  = 'c:' === $key ? 'root' : ( null !== $n['lock'] ? 'locked' : ( $n['info'] ? 'article' : 'top' ) );
+		if ( 'c:' === $key || 'i:' === $key || null !== $n['lock'] ) {
+			$page[ $key ]    = $key;
+			$members[ $key ] = $n['own'];
+			$why[ $key ]     = null !== $n['lock'] ? 'locked' : ( 'i:' === $key ? 'article' : 'root' );
 			continue;
 		}
-		$to    = $page[ $pk ] ?? $pk; // The page the parent is in.
-		$p     = $nodes[ $to ];
-		$vol   = $est( $key );
-		// The line: «pct» of the page it would join, and never below the project's floor.
-		$line  = max( $pct * max( 1, (int) $p['hv'] ), $n['info'] ? $floor / 3 : $floor );
-		$ratio = $vol / max( 1, $line );
-		$above = $ratio >= 1;
-		$ev    = null;
-		$hn    = $n['head'];
-		$hp    = $p['head'];
-		if ( null !== $hn ) {
-			$sh = null !== $hp ? qtb_fx_shared( $serps, $hubs, $hn, $hp ) : -1;
-			if ( $sh >= 0 ) {
-				// Above the line only near-identical results merge (two spellings of one search).
-				$same = $above ? $sh >= min( 9, $need + 2 ) : $sh >= $need;
-				$ev   = array( 'by' => 'serp', 'v' => $same ? 'same' : 'diff', 'shared' => $sh, 'note' => '' );
-			} else {
-				foreach ( array_filter( array( $hn, $hp, $nodes[ $pk ]['head'] ), 'is_int' ) as $h ) {
+		$nf   = array_keys( $n['facets'] );
+		$pre  = $n['info'] ? 'i:' : 'c:';
+		$anc  = array(); // page keys above this node.
+		$sib  = array(); // same-level pages that differ by one word of the same type.
+		foreach ( array_keys( $members ) as $pk ) {
+			if ( 0 !== strpos( $pk, $pre ) ) {
+				continue;
+			}
+			$pf = array_keys( $nodes[ $pk ]['facets'] );
+			if ( count( $pf ) < count( $nf ) && ! array_diff( $pf, $nf ) ) {
+				$anc[] = $pk;
+			} elseif ( count( $pf ) === count( $nf ) && $nf && 1 === count( array_diff( $nf, $pf ) ) ) {
+				$x = array_values( array_diff( $nf, $pf ) )[0];
+				$y = array_values( array_diff( $pf, $nf ) )[0];
+				if ( $n['facets'][ $x ] === $nodes[ $pk ]['facets'][ $y ] && ! in_array( $n['facets'][ $x ], array( 'other', 'info' ), true ) ) {
+					$sib[] = $pk;
+				}
+			}
+		}
+		if ( ! $anc && ! $n['info'] ) {
+			$anc[] = 'c:';
+		}
+		// Nearest page above: the most facets in common, then the biggest.
+		usort( $anc, function ( $a, $b ) use ( $nodes ) {
+			return count( $nodes[ $b ]['facets'] ) <=> count( $nodes[ $a ]['facets'] ) ?: $nodes[ $b ]['hv'] <=> $nodes[ $a ]['hv'];
+		} );
+		$near = $anc[0] ?? null;
+		$vol  = $est( $key );
+		$line = $near ? max( $pct * max( 1, (int) $nodes[ $near ]['hv'] ), $n['info'] ? $floor / 3 : $floor ) : 0;
+		// Compare with every candidate.
+		$mine   = $reps( $n['own'], 2 );
+		// Above the line only near-identical results merge (two wordings of one search).
+		$big    = $near && $vol >= $line;
+		$best   = null; // [page key, score, shared, top3, by, sibling?].
+		$closest = null; // Best non-similar SERP candidate (for the evidence note).
+		$any_ev = false;
+		foreach ( array_merge( array_map( function ( $k ) {
+			return array( $k, false );
+		}, $anc ), array_map( function ( $k ) {
+			return array( $k, true );
+		}, $sib ) ) as $cand ) {
+			list( $pk, $is_sib ) = $cand;
+			$theirs = $reps( (array) ( $members[ $pk ] ?? array() ), 3 );
+			$ov     = null;
+			foreach ( $mine as $a ) {
+				foreach ( $theirs as $b ) {
+					$o = qtb_fx_overlap( $serps, $hubs, $a, $b );
+					if ( $o && ( null === $ov || $o[0] + 0.5 * $o[1] > $ov[0] + 0.5 * $ov[1] ) ) {
+						$ov = $o;
+					}
+				}
+			}
+			if ( null !== $ov ) {
+				$any_ev  = true;
+				$similar = $is_sib || $big ? $ov[0] >= $base + 2 : ( $ov[0] >= $base || ( $ov[0] >= $base - 1 && $ov[1] >= 1 ) );
+				$score   = $ov[0] + 0.5 * $ov[1];
+				if ( $similar && ( null === $best || $score > $best[1] ) ) {
+					$best = array( $pk, $score, $ov[0], $ov[1], 'serp', $is_sib );
+				} elseif ( ! $similar && ( null === $closest || $score > $closest[1] ) ) {
+					$closest = array( $pk, $score, $ov[0] );
+				}
+				continue;
+			}
+			// No pair of SERPs: the competitors' pages.
+			if ( $is_sib ) {
+				continue;
+			}
+			$c = qtb_fx_comp( $cidx, $comps, $sub, $n['own'], (array) ( $members[ $pk ] ?? array() ) );
+			if ( $c ) {
+				$any_ev = true;
+				if ( 'same' === $c['v'] && ( ! $big || $c['strong'] ) && ( null === $best || 2.5 > $best[1] ) ) {
+					$best = array( $pk, 2.5, -1, 0, 'comp', false, $c['note'] );
+				}
+			}
+			if ( ! empty( $opts['plan_only'] ) ) {
+				foreach ( array_slice( (array) ( $members[ $pk ] ?? array() ), 0, 2 ) as $h ) {
 					if ( ! isset( $serps[ $h ] ) ) {
 						$want[ $h ] = max( $want[ $h ] ?? 0, $vol );
 					}
 				}
-				$c = qtb_fx_comp( $opts['comp_idx'] ?? array(), $opts['comps'] ?? array(), $sub, $n['own'], null !== $hp ? array_merge( array( $hp ), $p['own'] ) : $p['own'] );
-				if ( $c && ( 'diff' === $c['v'] || ! $above || $c['strong'] ) ) {
-					$ev = array( 'by' => 'comp', 'v' => $c['v'], 'shared' => -1, 'note' => $c['note'] );
+			}
+		}
+		if ( ! empty( $opts['plan_only'] ) ) {
+			foreach ( array_slice( $n['own'], 0, $vol >= $floor ? 2 : 1 ) as $h ) {
+				if ( ! isset( $serps[ $h ] ) ) {
+					$want[ $h ] = max( $want[ $h ] ?? 0, $vol );
 				}
 			}
 		}
-		$merge = $ev ? 'same' === $ev['v'] : ! $above;
-		if ( ! $merge ) {
-			$page[ $key ] = $key;
-			$why[ $key ]  = $ev ? ( 'serp' === $ev['by'] ? 'serp_diff' : 'comp_diff' ) : 'threshold';
-			$evs[ $key ]  = $ev;
+		$to   = null;
+		$m    = null;
+		$flag = false;
+		if ( $best ) {
+			$to = $best[0];
+			$m  = 'serp' === $best[4]
+				? array( 'conf' => $best[2] >= $base + 2 ? 'high' : 'mid', 'shared' => $best[2], 'alt' => null, 'alt_shared' => 0, 'why' => $best[5] ? 'syn' : 'serp' )
+				: array( 'conf' => 'mid', 'shared' => -1, 'alt' => null, 'alt_shared' => 0, 'why' => 'comp', 'comp' => $best[6] ?? '' );
+		} elseif ( $near && $vol < $line ) {
+			// Too small to stand alone: never a page.
+			$to   = $near;
+			$flag = $vol >= 0.3 * $line;
+			$m    = array( 'conf' => $flag ? 'low' : 'mid', 'shared' => $closest ? (int) $closest[2] : -1, 'alt' => null, 'alt_shared' => 0, 'why' => $any_ev ? 'near' : 'tail' );
+		}
+		if ( null === $to ) {
+			$page[ $key ]    = $key;
+			$members[ $key ] = $n['own'];
+			$why[ $key ]     = $any_ev ? ( $closest ? 'serp_diff' : 'comp_diff' ) : ( $near ? 'threshold' : ( $n['info'] ? 'article' : 'top' ) );
+			if ( $closest ) {
+				$evs[ $key ] = array( 'by' => 'serp', 'v' => 'diff', 'shared' => (int) $closest[2], 'note' => 'شبیه‌ترین صفحه: ' . ( isset( $nodes[ $closest[0] ]['head'] ) && null !== $nodes[ $closest[0] ]['head'] ? $sub[ $nodes[ $closest[0] ]['head'] ]['k'] : '' ) );
+			}
 			continue;
 		}
 		$page[ $key ] = $to;
-		$flag         = ! $ev && $ratio >= 0.3;
 		foreach ( $n['own'] as $i ) {
-			if ( $ev ) {
-				$m = array( 'conf' => 'serp' === $ev['by'] ? ( $ev['shared'] >= $need + 2 ? 'high' : 'mid' ) : 'mid', 'shared' => (int) $ev['shared'], 'alt' => null, 'alt_shared' => 0, 'why' => 'serp' === $ev['by'] ? 'serp' : 'comp' );
-				if ( 'comp' === $ev['by'] ) {
-					$m['comp'] = $ev['note'];
-				}
-			} else {
-				$m = array( 'conf' => $flag ? 'low' : 'mid', 'shared' => -1, 'alt' => null, 'alt_shared' => 0, 'why' => 'tail' );
-			}
-			$m['from'] = $hn;
-			$m['node'] = $key;
-			if ( $flag ) {
-				$m['review'] = 1;
-			}
-			$meta[ $i ] = $m;
+			$meta[ $i ] = $m + array( 'from' => $n['head'], 'node' => $key ) + ( $flag ? array( 'review' => 1 ) : array() );
+			$members[ $to ][] = (int) $i;
 		}
-		if ( $flag && null !== $hn ) {
-			$review[ $to ][] = (int) $hn;
+		usort( $members[ $to ], function ( $a, $b ) use ( $sub ) {
+			return $sub[ $b ]['v'] <=> $sub[ $a ]['v'];
+		} );
+		if ( $flag && null !== $n['head'] ) {
+			$review[ $to ][] = (int) $n['head'];
 		}
 	}
 	if ( ! empty( $opts['plan_only'] ) ) {
 		arsort( $want );
 		return array( 'groups' => array(), 'want' => array_keys( $want ) );
 	}
-	$members = array();
-	foreach ( $nodes as $key => $n ) {
-		foreach ( $n['own'] as $i ) {
-			$members[ $page[ $key ] ][] = (int) $i;
-		}
-	}
 	$groups = array();
 	foreach ( $nodes as $key => $n ) {
-		if ( $page[ $key ] !== $key ) {
+		if ( ( $page[ $key ] ?? null ) !== $key ) {
 			continue;
 		}
-		$list = array_values( array_unique( (array) ( $members[ $key ] ?? array() ) ) );
+		$list = array_values( array_unique( array_map( 'intval', (array) ( $members[ $key ] ?? array() ) ) ) );
 		if ( ! $list && null === $n['lock'] ) {
 			continue;
 		}
@@ -858,6 +977,77 @@ function qtb_fx_decide( $fx, $sub, $tree, $opts ) {
 		$groups[]  = $g;
 	}
 	return array( 'groups' => $groups, 'want' => array() );
+}
+
+/**
+ * Page type from Google's top 3 (what Google prefers for this search): the top 3 of up to
+ * three keywords of the cluster. Two thirds shop pages (product / category / marketplace)
+ * → a commercial page (product when product pages lead and the store has one matching
+ * product, otherwise a category archive); two thirds articles → an article. A reviewer's
+ * choice or a project rule always wins.
+ *
+ * @return array clusters
+ */
+function qtb_fx_pages_by_top3( $clusters, $kws, $serps ) {
+	$shop_t = array( 'product', 'category', 'marketplace' );
+	$info_t = array( 'article', 'video', 'forum', 'wiki' );
+	foreach ( $clusters as &$c ) {
+		$cnt = array();
+		$n   = 0;
+		$used = 0;
+		foreach ( $c['kws'] as $i ) {
+			if ( empty( $serps[ $i ]['organic'] ) ) {
+				continue;
+			}
+			foreach ( array_slice( (array) $serps[ $i ]['organic'], 0, 3 ) as $o ) {
+				$t         = qtb_result_type( $o );
+				$cnt[ $t ] = ( $cnt[ $t ] ?? 0 ) + 1;
+				++$n;
+			}
+			if ( ++$used >= 3 ) {
+				break;
+			}
+		}
+		if ( ! $n ) {
+			continue;
+		}
+		$shop = 0;
+		$info = 0;
+		foreach ( $cnt as $t => $v ) {
+			$shop += in_array( $t, $shop_t, true ) ? $v : 0;
+			$info += in_array( $t, $info_t, true ) ? $v : 0;
+		}
+		$labels = array( 'product' => 'محصول', 'category' => 'دسته', 'marketplace' => 'بازارگاه', 'article' => 'مقاله', 'video' => 'ویدیو', 'forum' => 'انجمن', 'wiki' => 'ویکی', 'home' => 'صفحه اصلی سایت', 'other' => 'سایر' );
+		arsort( $cnt );
+		$c['top3'] = implode( '، ', array_map( function ( $t, $v ) use ( $labels ) {
+			return ( $labels[ $t ] ?? $t ) . ' ' . qtb_num( $v );
+		}, array_keys( $cnt ), $cnt ) ) . ' از ' . qtb_num( $n );
+		if ( ! empty( $c['locked_page'] ) || 0 === strpos( (string) ( $c['page_reason'] ?? '' ), 'قانون پروژه' ) ) {
+			continue;
+		}
+		if ( $shop * 3 >= $n * 2 ) {
+			$prod = (int) ( $cnt['product'] ?? 0 );
+			$cat  = (int) ( $cnt['category'] ?? 0 ) + (int) ( $cnt['marketplace'] ?? 0 );
+			if ( $prod > $cat && 1 === (int) ( $c['store_match'] ?? 0 ) ) {
+				$c['page']    = 'product';
+				$c['archive'] = '';
+			} elseif ( 'archive' !== $c['page'] || in_array( $c['archive'] ?? '', array( '', null ), true ) ) {
+				$c['page']    = 'archive';
+				$c['archive'] = ( $c['archive'] ?? '' ) ?: 'category';
+			}
+			$c['page_reason'] = 'گوگل در ۳ نتیجه اول صفحات فروشگاهی نشان داده (' . $c['top3'] . ')؛ صفحه تجاری.';
+			$c['top3_lock']   = 1;
+		} elseif ( $info * 3 >= $n * 2 ) {
+			$c['page']        = 'article';
+			$c['archive']     = '';
+			$c['page_reason'] = 'گوگل در ۳ نتیجه اول مقاله نشان داده (' . $c['top3'] . ')؛ صفحه مقاله.';
+			$c['top3_lock']   = 1;
+		} else {
+			unset( $c['top3_lock'] );
+		}
+	}
+	unset( $c );
+	return $clusters;
 }
 
 // ---------------------------------------------------------------------------
@@ -992,8 +1182,8 @@ function qtb_fx_why_labels() {
 		'top'       => 'ویژگی سطح اول',
 		'article'   => 'مقاله مستقل',
 		'locked'    => 'قفل شما',
-		'threshold' => 'بالای آستانه حجم',
-		'serp_diff' => 'گوگل نتایج متفاوت نشان داد',
+		'threshold' => 'بالای آستانه حجم (بدون شاهد گوگل)',
+		'serp_diff' => 'گوگل شبیه هیچ صفحه‌ای ندانست',
 		'comp_diff' => 'رقیب صفحه جدا دارد',
 	);
 }

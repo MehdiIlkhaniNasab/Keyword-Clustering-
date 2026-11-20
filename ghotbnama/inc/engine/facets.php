@@ -241,33 +241,82 @@ function qtb_ai_facet_batch( $project, $ws, $fx, $batch, $kws ) {
 	if ( is_wp_error( $res ) ) {
 		return $res;
 	}
+	// Models answer in more than one shape (objects, «واژه|نوع|اصلی» strings, a map
+	// keyed by the word): read them all, skip what cannot be read.
 	$types = array();
-	foreach ( (array) ( $res['types'] ?? array() ) as $ty ) {
-		$id = sanitize_key( (string) $ty['id'] );
+	foreach ( qtb_fx_rows( $res['types'] ?? array(), array( 'id', 'label', 'plural' ) ) as $ty ) {
+		$id = sanitize_key( (string) ( $ty['id'] ?? '' ) );
 		if ( '' === $id || isset( qtb_fx_reserved()[ $id ] ) ) {
 			continue;
 		}
+		$label        = (string) ( $ty['label'] ?? $id );
 		$types[ $id ] = array(
-			'label'  => qtb_mb_cut( qtb_display( (string) $ty['label'] ), 30 ),
-			'plural' => qtb_mb_cut( qtb_display( (string) ( $ty['plural'] ?: $ty['label'] ) ), 30 ),
+			'label'  => qtb_mb_cut( qtb_display( $label ), 30 ),
+			'plural' => qtb_mb_cut( qtb_display( (string) ( ( $ty['plural'] ?? '' ) ?: $label ) ), 30 ),
 		);
 	}
 	$valid  = array_merge( array_keys( (array) $fx['types'] ), array_keys( $types ), array_keys( qtb_fx_reserved() ) );
 	$tokens = array();
-	foreach ( (array) ( $res['items'] ?? array() ) as $it ) {
-		$t = qtb_norm_key( (string) $it['t'] );
-		if ( ! isset( $batch[ $t ] ) ) {
+	foreach ( qtb_fx_rows( $res['items'] ?? ( $res['tokens'] ?? array() ), array( 't', 'type', 'canon' ) ) as $it ) {
+		$t = qtb_norm_key( (string) ( $it['t'] ?? ( $it['token'] ?? ( $it['word'] ?? '' ) ) ) );
+		if ( '' === $t || ! isset( $batch[ $t ] ) ) {
 			continue;
 		}
-		$type = sanitize_key( (string) $it['type'] );
-		$c    = qtb_norm_key( (string) $it['canon'] );
+		$type = sanitize_key( (string) ( $it['type'] ?? ( $it['role'] ?? '' ) ) );
+		$c    = qtb_norm_key( (string) ( $it['canon'] ?? ( $it['canonical'] ?? '' ) ) );
 		$tokens[ $t ] = array(
 			't'  => in_array( $type, $valid, true ) ? $type : 'other',
 			'c'  => '' !== $c && false === strpos( $c, ' ' ) ? $c : $t,
 			'by' => 'ai',
 		);
 	}
+	if ( ! $tokens && $batch ) {
+		return new WP_Error( 'qtb_ai_parse', 'پاسخ هوش مصنوعی برای نقش واژه‌ها قابل خواندن نبود.' );
+	}
 	return array( 'types' => $types, 'tokens' => $tokens );
+}
+
+/**
+ * Rows of an AI answer list in any shape: [{…}], ["a|b|c"], or {key: {…}} / {key: "b|c"}.
+ *
+ * @param mixed    $list
+ * @param string[] $keys Field names, in the order of a «|»-separated string.
+ * @return array[]
+ */
+function qtb_fx_rows( $list, $keys ) {
+	if ( is_string( $list ) ) {
+		$list = preg_split( '/\r?\n/', $list );
+	}
+	$out = array();
+	foreach ( (array) $list as $k => $row ) {
+		if ( is_string( $row ) ) {
+			$parts = array_map( 'trim', preg_split( '/\s*[|=:،,]\s*/u', $row ) );
+			if ( is_string( $k ) ) {
+				array_unshift( $parts, $k );
+			}
+			$row = array();
+			foreach ( $keys as $n => $f ) {
+				if ( isset( $parts[ $n ] ) && '' !== $parts[ $n ] ) {
+					$row[ $f ] = $parts[ $n ];
+				}
+			}
+		} elseif ( is_array( $row ) ) {
+			if ( is_string( $k ) && ! isset( $row[ $keys[0] ] ) ) {
+				$row[ $keys[0] ] = $k;
+			}
+		} else {
+			continue;
+		}
+		foreach ( $row as $f => $v ) {
+			if ( ! is_scalar( $v ) ) {
+				unset( $row[ $f ] );
+			}
+		}
+		if ( $row ) {
+			$out[] = $row;
+		}
+	}
+	return $out;
 }
 
 /**

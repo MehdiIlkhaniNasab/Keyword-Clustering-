@@ -403,6 +403,7 @@
 			if ( b.getAttribute( 'data-confirm' ) && ! window.confirm( b.getAttribute( 'data-confirm' ) ) ) { return; }
 			var body = { action: b.getAttribute( 'data-qtb-wsgo' ) };
 			if ( b.getAttribute( 'data-source' ) ) { body.source = b.getAttribute( 'data-source' ); }
+			if ( b.getAttribute( 'data-fresh' ) ) { body.fresh = 1; }
 			if ( b.getAttribute( 'data-tid' ) ) {
 				body.tid = +b.getAttribute( 'data-tid' );
 				var ms = $( '[data-qtb-tmode="' + body.tid + '"]' );

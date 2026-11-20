@@ -133,6 +133,9 @@ $chip = function ( $i, $c, $n = 0 ) use ( $kws, $conf_l, $why_l, $act_l, $names,
 			<span class="qtb-inline">
 				<select data-qtb-tmode="<?php echo esc_attr( $tid ); ?>" style="width:auto;min-height:34px" title="روش بازبینی هوشمند در پردازش بعدی"><?php qtb_options( array( 'batch' => 'بازبینی دسته‌ای', 'single' => 'بازبینی تک‌تک' ), $t['mode'] ); ?></select>
 				<button type="button" class="qtb-btn is-small" data-qtb-wsgo="topic" data-tid="<?php echo esc_attr( $tid ); ?>" title="کلاسترهای قفل‌شده (دست‌خورده) حفظ می‌شوند"><?php echo qtb_icon( 'refresh', 14 ); // phpcs:ignore ?> پردازش دوباره</button>
+				<?php if ( 'facet' === ( $project['cfg']['engine'] ?? 'facet' ) && $t['clusters'] ) : ?>
+					<button type="button" class="qtb-btn is-small is-gold" data-qtb-wsgo="topic" data-tid="<?php echo esc_attr( $tid ); ?>" data-fresh="1" data-confirm="همه کلاسترهای این موضوع از نو با موتور ساختار ساخته شوند؟ قفل‌ها (حتی قفل تأیید موضوع) باز می‌شوند؛ فقط کلاسترهای فایل خودتان دست نمی‌خورند. اصلاح‌های قبلی شما در حافظه هوش مصنوعی می‌ماند." title="قفل همه کلاسترها (جز کلاسترهای فایل شما) باز می‌شود و درخت صفحات از نو ساخته می‌شود"><?php echo qtb_icon( 'layers', 14 ); // phpcs:ignore ?> از نو با موتور ساختار</button>
+				<?php endif; ?>
 				<?php if ( 'approved' === $t['status'] ) : ?>
 					<button type="button" class="qtb-btn is-small" data-qtb-wsop="reopen"><?php echo qtb_icon( 'edit', 14 ); // phpcs:ignore ?> باز کردن برای ویرایش</button>
 				<?php else : ?>

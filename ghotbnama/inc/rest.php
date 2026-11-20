@@ -414,6 +414,21 @@ function qtb_rest_ws_start( $req ) {
 			$ws['topics'][ $ti ]['mode'] = $req['mode'];
 			qtb_ws_put( $p['id'], $ws );
 		}
+		// «از نو»: approving locks every cluster, so a re-run would keep them all. Unlock
+		// everything except the clusters of the reviewer's own file.
+		if ( $req['fresh'] ) {
+			foreach ( $ws['topics'][ $ti ]['clusters'] as &$c ) {
+				if ( empty( $c['own'] ) ) {
+					unset( $c['locked_section'], $c['locked_page'], $c['locked_name'], $c['page_ai'] );
+					$c['locked'] = 0;
+				}
+			}
+			unset( $c );
+			if ( 'approved' === $ws['topics'][ $ti ]['status'] ) {
+				$ws['topics'][ $ti ]['status'] = 'ready';
+			}
+			qtb_ws_put( $p['id'], $ws );
+		}
 		$args['tid'] = (int) $req['tid'];
 	}
 	qtb_ws_start( $p, $action, $args );

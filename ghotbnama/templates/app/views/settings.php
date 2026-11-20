@@ -54,7 +54,11 @@ $sk_g   = $sokan && ( '' !== (string) ( $sokan['google_refresh_token'] ?? '' ) |
 	</div>
 
 	<div class="qtb-panel">
-		<div class="qtb-panel-head"><h2><?php echo qtb_icon( 'research', 18 ); // phpcs:ignore ?> نتایج گوگل (SERP)</h2><button type="button" class="qtb-btn is-small" data-qtb-test="serp">تست اتصال</button></div>
+		<div class="qtb-panel-head"><h2><?php echo qtb_icon( 'research', 18 ); // phpcs:ignore ?> نتایج گوگل (SERP)</h2></div>
+		<?php qtb_view( 'settings-serp', array() ); ?>
+		<details class="qtb-adv">
+		<summary>تنظیمات پیشرفته: سرویس‌های دیگر (DataForSEO، SerpApi)، کلید سکان، کش و سقف درخواست</summary>
+		<div class="qtb-inline" style="margin:10px 0"><button type="button" class="qtb-btn is-small" data-qtb-test="serp">تست تنظیمات این فرم</button></div>
 		<div class="qtb-choice">
 			<label><input type="radio" name="serp_source" value="sokan" <?php checked( $s['serp_source'], 'sokan' ); ?> data-qtb-toggle="serp"><span><b>کلید سکان</b><small><?php echo $sk_sp ? esc_html( ( $sokan['serp_provider'] ?? 'serper' ) . ' · ' . qtb_mask( $sokan['serp_key'] ) ) : 'سکان کلید نتایج گوگل ندارد'; ?></small></span></label>
 			<label><input type="radio" name="serp_source" value="own" <?php checked( $s['serp_source'], 'own' ); ?> data-qtb-toggle="serp"><span><b>کلید جداگانه</b><small>Serper، DataForSEO یا SerpApi</small></span></label>
@@ -76,6 +80,7 @@ $sk_g   = $sokan && ( '' !== (string) ( $sokan['google_refresh_token'] ?? '' ) |
 		</div>
 		<p class="qtb-note"><?php echo qtb_icon( 'coins', 16 ); // phpcs:ignore ?><span>کش نتایج گوگل بین همه پروژه‌ها مشترک است (الان <?php echo esc_html( qtb_num( qtb_serp_cache_count() ) ); ?> نتیجه). در حالت «اقتصادی» فقط حدود ۲۵ تا ۳۵ درصد کلمات بررسی می‌شوند؛ هر پروژه ۵۰۰۰ کلمه‌ای حدود ۱۲۰۰ تا ۱۸۰۰ درخواست.</span></p>
 		<pre class="qtb-small" data-qtb-test-out="serp" hidden style="white-space:pre-wrap;background:var(--soft);padding:10px;border-radius:10px"></pre>
+		</details>
 	</div>
 
 	<div class="qtb-panel">

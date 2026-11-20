@@ -19,6 +19,11 @@ function qtb_project_defaults() {
 		'locations'      => array(),      // Cities with a branch (local queries → landing).
 		'priorities'     => '',           // Categories that matter most for sales.
 		'review_mode'    => 'batch',      // AI review of the workshop: batch (≈25 keywords per request) | single (one keyword per request).
+		'engine'         => 'facet',      // Workshop clustering: facet (structure first: facet dictionary + page tree) | classic (keyword-level SERP clustering).
+		'split_pct'      => 10,           // A sub-page is its own page by default when its volume ≥ this % of its parent's biggest keyword (Google confirms the borderline).
+		'min_page'       => 0,            // Minimum volume of a page of its own (0 = auto: a quarter of split_pct of the project's biggest keyword).
+		'promote_pct'    => 15,           // A facet type with ≥ this % of a topic's demand gets its own section (e.g. brands).
+		'biz_kind'       => 'shop',       // shop | service | content: names the «products / services» section.
 		'brands'         => array(),      // Own brand names (kept, marked as brand).
 		'competitors'    => array(),      // Competitor brands / sites (removed).
 		'negatives'      => array(),      // Extra words that make a keyword useless for this project.

@@ -40,6 +40,19 @@ $by = array_count_values( array_column( (array) ( $inv['items'] ?? array() ), 't
 			<label><input type="radio" name="review_mode" value="batch" <?php checked( $cfg['review_mode'], 'batch' ); ?>><span><b>دسته‌ای (پیشنهادی)</b><small>هر درخواست حدود ۲۵ کلمه با کلاسترهای کاندیدش؛ سریع و ارزان</small></span></label>
 			<label><input type="radio" name="review_mode" value="single" <?php checked( $cfg['review_mode'], 'single' ); ?>><span><b>تک‌تک</b><small>هر کلمه یک درخواست با جزئیات بیشتر؛ کندتر و گران‌تر — برای مقایسه</small></span></label>
 		</div>
+		<fieldset class="qtb-struct">
+			<legend><?php echo qtb_icon( 'layers', 16 ); // phpcs:ignore ?> ساختار صفحات <small>این عددها مخصوص همین پروژه‌اند؛ پروژه کم‌تقاضا و پرتقاضا هر کدام عدد خودشان را می‌گیرند</small></legend>
+			<div class="qtb-choice">
+				<label><input type="radio" name="engine" value="facet" <?php checked( $cfg['engine'], 'facet' ); ?>><span><b>اول ساختار، بعد کلاستر (پیشنهادی)</b><small>فرهنگ ویژگی‌ها و درخت صفحات؛ گوگل فقط موارد مرزی را داوری می‌کند. کلاستر کمتر، تصمیم شفاف‌تر.</small></span></label>
+				<label><input type="radio" name="engine" value="classic" <?php checked( $cfg['engine'], 'classic' ); ?>><span><b>کلمه‌به‌کلمه با سرپ (روش قبلی)</b><small>هر کلمه با ۱۰ نتیجه اول همه کلمات مقایسه می‌شود؛ برای مقایسه با روش جدید.</small></span></label>
+			</div>
+			<div class="qtb-grid-2">
+				<label>آستانه صفحه مستقل (٪) <small>زیرصفحه وقتی جدا می‌شود که حجمش دست‌کم این درصد از پرجستجوترین کلمه صفحه بالادستش باشد؛ گوگل موارد مرزی را تأیید یا رد می‌کند.</small><input type="number" name="split_pct" min="1" max="60" step="1" value="<?php echo esc_attr( (float) $cfg['split_pct'] ); ?>"></label>
+				<label>حداقل حجم صفحه مستقل <small>صفر = خودکار (الان <?php echo esc_html( qtb_num( qtb_fx_floor( array_merge( $project, array( 'cfg' => array_merge( $cfg, array( 'min_page' => 0 ) ) ) ) ) ) ); ?>، یعنی یک‌چهارم آستانه از بزرگ‌ترین کلمه پروژه). کمتر از این فقط با تأیید گوگل صفحه جدا می‌شود.</small><input type="number" name="min_page" min="0" step="25" value="<?php echo esc_attr( (int) $cfg['min_page'] ); ?>"></label>
+				<label>بخش مستقل برای یک نوع ویژگی (٪) <small>نوعی که دست‌کم این سهم از تقاضای موضوع را دارد (مثلاً برند) بخش خودش را می‌گیرد؛ بقیه زیر «ویژگی‌ها» می‌مانند.</small><input type="number" name="promote_pct" min="1" max="100" step="1" value="<?php echo esc_attr( (float) $cfg['promote_pct'] ); ?>"></label>
+				<label>نوع کسب‌وکار <small>نام بخش «محصولات» یا «خدمات» را تعیین می‌کند.</small><select name="biz_kind"><?php qtb_options( array( 'shop' => 'فروشگاه (محصولات)', 'service' => 'خدماتی (خدمات)', 'content' => 'محتوایی' ), $cfg['biz_kind'] ); ?></select></label>
+			</div>
+		</fieldset>
 		<div class="qtb-form-foot"><button class="qtb-btn is-primary" type="submit"><?php echo qtb_icon( 'check', 16 ); // phpcs:ignore ?> ذخیره پروفایل</button></div>
 	</form>
 	<div>

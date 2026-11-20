@@ -11,7 +11,7 @@ defined( 'ABSPATH' ) || exit;
 
 $running = $job && empty( $job['done'] ) && empty( $job['error'] ) && empty( $job['paused'] );
 $st      = $job ? qtb_ws_job_status( $job ) : null;
-$names   = array( 'triage' => 'غربال کلمات', 'topics' => 'تقسیم موضوعی', 'topic' => 'پردازش موضوع', 'add' => 'افزودن کلمات جدید' );
+$names   = array( 'triage' => 'غربال کلمات', 'topics' => 'تقسیم موضوعی', 'topic' => 'پردازش موضوع', 'add' => 'افزودن کلمات جدید', 'facets' => 'فرهنگ ویژگی‌ها' );
 ?>
 <div class="qtb-panel is-hero qtb-wsjob<?php echo $st && $st['done'] ? ' is-done' : ''; ?>" data-qtb-wsjob="<?php echo esc_attr( $project['id'] ); ?>" data-running="<?php echo $running ? 1 : 0; ?>" <?php echo $st && ( $running || $st['error'] || ! empty( $st['paused'] ) || ( $st['done'] && ! empty( $job['started'] ) && strtotime( $job['started'] ) > current_time( 'timestamp' ) - 600 ) ) ? '' : 'hidden'; // phpcs:ignore ?>>
 	<div class="qtb-run">

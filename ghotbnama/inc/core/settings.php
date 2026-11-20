@@ -11,7 +11,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-const QTB_SECRET_KEYS = array( 'ai_gateway_key', 'anthropic_key', 'serp_key', 'dfs_password', 'google_service_account' );
+const QTB_SECRET_KEYS = array( 'ai_gateway_key', 'anthropic_key', 'serp_key', 'dfs_password', 'google_service_account', 'serp_worker_secret' );
 
 /**
  * Default settings.
@@ -37,6 +37,10 @@ function qtb_settings_defaults() {
 		'serp_hl'                => 'fa',
 		'serp_cache_days'        => 30,
 		'serp_max_project'       => 2000, // Hard cap of paid SERP requests per run.
+		'serp_route'             => 'direct', // Serper: direct | worker (Cloudflare relay) | browser (the reviewer's browser).
+		'serp_worker_url'        => '',
+		'serp_worker_secret'     => '',
+		'serp_wizard'            => array(), // Connection guide progress: {step, done: [step ids]}.
 		// Google: "sokan" = Sokan's OAuth / service account; "own" = a service account JSON.
 		'google_source'          => 'sokan',
 		'google_service_account' => '',

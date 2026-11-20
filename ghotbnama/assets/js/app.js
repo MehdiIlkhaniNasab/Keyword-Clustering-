@@ -90,7 +90,7 @@
 			msg.textContent = st.paused ? st.paused.msg : '';
 			$( '[data-act="pause"]', ctl ).hidden = !! st.paused;
 			$( '[data-act="resume"]', ctl ).hidden = ! st.paused;
-			$( '[data-act="skip"]', ctl ).hidden = ! ( st.paused && 'serp' === st.paused.why );
+			$( '[data-act="skip"]', ctl ).hidden = ! ( st.paused && ( 'serp' === st.paused.why || 'serp_browser' === st.paused.why ) );
 		}
 		var ul = $( '[data-qtb-steps]', box );
 		if ( ul && st.steps ) {
@@ -308,7 +308,7 @@
 	// ---- Workshop ----
 	var wsj = $( '[data-qtb-wsjob]' );
 	var wsPid = wsj ? wsj.getAttribute( 'data-qtb-wsjob' ) : null;
-	var wsNames = { triage: 'غربال کلمات', topics: 'تقسیم موضوعی', topic: 'پردازش موضوع', add: 'افزودن کلمات جدید' };
+	var wsNames = { triage: 'غربال کلمات', topics: 'تقسیم موضوعی', topic: 'پردازش موضوع', add: 'افزودن کلمات جدید', facets: 'فرهنگ ویژگی‌ها' };
 	var kinds = { remove: 'حذف', keep: 'نگه‌داشتن', park: 'پارکینگ', page: 'نوع صفحه', note: 'دستور' };
 
 	function apiGet( path, params ) {
@@ -350,6 +350,19 @@
 				if ( tt ) { tt.textContent = wsNames[ st.action ] || ''; }
 				paint( st, wsj );
 				if ( st.error ) { wsBusy( false ); toast( st.error, true ); return; }
+				if ( st.paused && 'serp_browser' === st.paused.why && st.paused.items ) {
+					// The browser route: this page fetches the results, then the step goes on.
+					browserSerp( st.paused, wsPid, function ( done, all ) {
+						var lab = $( '[data-qtb-label]', wsj );
+						if ( lab ) { lab.textContent = 'نتایج گوگل از مرورگر شما: ' + fa( done ) + ' از ' + fa( all ) + ' — این صفحه را باز نگه دارید'; }
+					} ).then( function () {
+						return api( 'ws/control/' + wsPid, { action: 'resume' } );
+					} ).then( function () { step( api( 'ws/tick/' + wsPid ) ); } ).catch( function ( err ) {
+						wsBusy( false );
+						toast( err.message, true );
+					} );
+					return;
+				}
 				if ( st.paused ) { wsBusy( false ); toast( st.paused.msg, 'serp' === st.paused.why ); return; }
 				if ( st.done ) {
 					setTimeout( function () { wsGoto( 'add' === st.action ? 'topics' : st.action, 'topic' === st.action ? st.tid : 0 ); }, 900 );
@@ -804,16 +817,31 @@
 			var b = $( '[data-qtb-bdmerge]', bd );
 			b.hidden = order.length < 2;
 			$( '[data-n]', b ).textContent = fa( order.length );
+			var bs = $( '[data-qtb-bdbulksec]', bd );
+			if ( bs ) {
+				bs.hidden = order.length < 1;
+				if ( bs.options.length < 2 ) {
+					var secBox = $( '.qtb-bd-secs', bd );
+					JSON.parse( ( secBox && secBox.getAttribute( 'data-sections' ) ) || '[]' ).forEach( function ( n ) {
+						var o = document.createElement( 'option' );
+						o.value = n;
+						o.textContent = n;
+						bs.appendChild( o );
+					} );
+				}
+				bs.options[ 0 ].textContent = 'بردن ' + fa( order.length ) + ' کلاستر انتخاب‌شده به بخش…';
+			}
 		};
 
 		// Filters.
 		var filter = 'all';
 		var applyFilter = function () {
 			var q = norm( ( $( '[data-qtb-bdsearch]', bd ) || {} ).value || '' );
+			bd.classList.toggle( 'is-filtering', 'all' !== filter || !! q );
 			$$( '.qtb-bd-cl', bd ).forEach( function ( card ) {
 				var shown = 0;
 				$$( 'ul > li[data-kw]', card ).forEach( function ( li ) {
-					var ok = ( 'all' === filter || ( 'low' === filter && ( li.classList.contains( 'is-c-low' ) || li.classList.contains( 'is-c-mid' ) ) ) || ( 'ai' === filter && $( '.qtb-ai-flag', li ) ) ) && ( ! q || ( li.getAttribute( 'data-k' ) || '' ).indexOf( q ) > -1 );
+					var ok = ( 'all' === filter || ( 'low' === filter && ( li.classList.contains( 'is-c-low' ) || li.classList.contains( 'is-c-mid' ) ) ) || ( 'ai' === filter && $( '.qtb-ai-flag', li ) ) || ( 'review' === filter && li.classList.contains( 'is-rev' ) ) ) && ( ! q || ( li.getAttribute( 'data-k' ) || '' ).indexOf( q ) > -1 );
 					li.hidden = ! ok;
 					shown += ok ? 1 : 0;
 				} );
@@ -825,6 +853,20 @@
 
 		bd.addEventListener( 'click', function ( e ) {
 			var t;
+			if ( ( t = e.target.closest( '[data-qtb-more]' ) ) ) {
+				t.closest( '.qtb-bd-cl' ).classList.toggle( 'is-open' );
+				return;
+			}
+			if ( ( t = e.target.closest( '[data-qtb-split]' ) ) ) {
+				t.disabled = true;
+				wsEdit( { op: 'split_node', tid: tid, cid: +t.getAttribute( 'data-cid' ), node: t.getAttribute( 'data-qtb-split' ) }, 'زیرگروه صفحه جدا شد' );
+				return;
+			}
+			if ( e.target.closest( '[data-qtb-bdreview]' ) ) {
+				var rf = $( '[data-qtb-bdfilter] [data-f="review"]', bd );
+				if ( rf ) { rf.click(); }
+				return;
+			}
 			if ( ( t = e.target.closest( '[data-qtb-bdfilter] [data-f]' ) ) ) {
 				e.preventDefault();
 				filter = t.getAttribute( 'data-f' );
@@ -871,6 +913,10 @@
 		bd.addEventListener( 'change', function ( e ) {
 			var t = e.target;
 			if ( t.matches( '[data-qtb-pick]' ) ) { syncPick(); }
+			if ( t.matches( '[data-qtb-bdbulksec]' ) && t.value ) {
+				wsEdit( { op: 'section_bulk', tid: tid, cids: order.slice(), section: t.value }, fa( order.length ) + ' کلاستر به بخش «' + t.value + '» رفت' );
+				return;
+			}
 			if ( t.matches( '[data-qtb-tmode]' ) ) { wsEdit( { op: 'mode', tid: tid, mode: t.value }, 'روش بازبینی ذخیره شد', true ); }
 			if ( t.matches( '[data-qtb-wssec]' ) ) {
 				var sec = t.value;
@@ -1036,5 +1082,283 @@
 			out.textContent = ( d.ok ? '✓ ' : '✗ ' ) + d.msg;
 			out.style.color = d.ok ? 'var(--accent-ink)' : 'var(--bad)';
 		} ).catch( function ( err ) { out.textContent = '✗ ' + err.message; out.style.color = 'var(--bad)'; } ).then( function () { b.disabled = false; } );
+	} );
+
+	// ---- Serper from the browser (route «browser») ----
+	var serperKey = null;
+	function serperFetch( key, q, gl, hl ) {
+		return fetch( 'https://google.serper.dev/search', {
+			method: 'POST',
+			headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
+			body: JSON.stringify( { q: q, gl: gl, hl: hl, num: 10 } )
+		} ).then( function ( r ) {
+			return r.json().catch( function () { return null; } ).then( function ( d ) {
+				if ( 401 === r.status || 403 === r.status ) { var e = new Error( 'Serper کلید را رد کرد یا اعتبار حساب تمام شده است.' ); e.hard = true; throw e; }
+				if ( 429 === r.status ) { var e2 = new Error( 'سقف درخواست Serper پر شده؛ چند دقیقه بعد «ادامه» را بزنید.' ); e2.hard = true; throw e2; }
+				if ( ! r.ok || ! d ) { throw new Error( 'Serper خطا داد (HTTP ' + r.status + ')' ); }
+				return d;
+			} );
+		}, function () {
+			var e = new Error( 'مرورگر به Serper نرسید (اینترنت، فیلترشکن یا اجازه مرورگر). مسیر Worker کلادفلر را در تنظیمات امتحان کنید.' );
+			e.hard = true;
+			throw e;
+		} );
+	}
+	function browserSerp( p, pid, progress ) {
+		var items = p.items.slice();
+		var all = items.length;
+		var done = 0;
+		var buf = [];
+		var fails = 0;
+		var flush = function ( force ) {
+			if ( ! buf.length || ( ! force && buf.length < 10 ) ) { return Promise.resolve(); }
+			var batch = buf.splice( 0, buf.length );
+			return api( 'ws/serp/' + pid, { items: batch } );
+		};
+		var keyP = serperKey ? Promise.resolve( serperKey ) : api( 'serp/browser-key', {} ).then( function ( d ) { serperKey = d; return d; } );
+		return keyP.then( function ( k ) {
+			var worker = function () {
+				var it = items.shift();
+				if ( ! it ) { return Promise.resolve(); }
+				return serperFetch( k.key, it[ 1 ], p.gl || k.gl, p.hl || k.hl ).then( function ( d ) {
+					buf.push( { i: it[ 0 ], k: it[ 1 ], data: d } );
+					done++;
+					if ( progress ) { progress( done, all ); }
+					return flush( false );
+				}, function ( err ) {
+					if ( err.hard || ++fails > 8 ) { throw err; }
+				} ).then( worker );
+			};
+			return Promise.all( [ worker(), worker(), worker() ] );
+		} ).then( function () { return flush( true ); }, function ( err ) {
+			return flush( true ).then( function () { throw err; } );
+		} );
+	}
+
+	// ---- Serper connection guide (settings) ----
+	var wz = $( '[data-qtb-wz]' );
+	if ( wz ) {
+		var order = [ 'account', 'key', 'test', 'cf_account', 'cf_worker', 'cf_code', 'cf_url' ];
+		var routeNames = { direct: 'مستقیم از سرور', worker: 'Worker کلادفلر', browser: 'مرورگر شما' };
+		var S = JSON.parse( wz.getAttribute( 'data-state' ) || '{}' );
+		var connected = function () { return S.has_key && S.done.indexOf( 'test' ) > -1 && 'done' === S.step; };
+		var setup = function ( body ) {
+			return api( 'serp/setup', body ).then( function ( d ) { if ( d.state ) { S = d.state; } render(); return d; } );
+		};
+		var render = function () {
+			var cur = S.step || 'account';
+			var cfOn = S.done.indexOf( 'cf_account' ) > -1 || 0 === cur.indexOf( 'cf_' ) || 'worker' === S.route;
+			$$( '.qtb-wz-step', wz ).forEach( function ( li ) {
+				var id = li.getAttribute( 'data-step' );
+				var i = order.indexOf( id );
+				var open = id === cur;
+				var done = S.done.indexOf( id ) > -1;
+				// A step opens once every earlier step of its path is done.
+				var prev = order.slice( 0, i ).filter( function ( x ) { return 0 !== x.indexOf( 'cf_' ) || 0 === id.indexOf( 'cf_' ); } );
+				var ready = prev.every( function ( x ) { return S.done.indexOf( x ) > -1 || ( 'test' === x && 0 === id.indexOf( 'cf_' ) ); } );
+				li.classList.toggle( 'is-done', done );
+				li.classList.toggle( 'is-open', open && ready );
+				li.classList.toggle( 'is-locked', ! ready );
+				li.hidden = 0 === id.indexOf( 'cf_' ) && ! cfOn;
+			} );
+			var shown = $$( '.qtb-wz-step', wz ).filter( function ( li ) { return ! li.hidden; } );
+			shown.forEach( function ( li, n ) { li.classList.toggle( 'is-last', n === shown.length - 1 ); } );
+			$( '[data-qtb-wz-final]', wz ).hidden = ! connected();
+			wz.classList.toggle( 'is-connected', connected() );
+			$( '[data-qtb-wz-route]', wz ).textContent = connected() ? 'وصل از مسیر: ' + routeNames[ S.route ] : 'هنوز وصل نیست';
+			$$( '[data-qtb-wz-routes] [data-qtb-wz-use]', wz ).forEach( function ( b ) { b.classList.toggle( 'is-active', b.getAttribute( 'data-qtb-wz-use' ) === S.route ); } );
+			[ 'direct', 'browser', 'worker' ].forEach( function ( r ) {
+				var row = $( '[data-qtb-wz-test="' + r + '"]', wz );
+				var t = S.tests && S.tests[ r ];
+				if ( ! row || ! t ) { return; }
+				row.className = t.ok ? 'is-ok' : 'is-bad';
+				$( '[data-msg]', row ).textContent = t.msg;
+				var use = $( '[data-qtb-wz-use]', row );
+				if ( use ) { use.hidden = ! t.ok; }
+			} );
+			var adv = $( '[data-qtb-wz-advice]', wz );
+			if ( adv && S.tests && S.tests.direct && S.tests.browser ) {
+				adv.hidden = false;
+				adv.textContent = S.tests.direct.ok ? 'مسیر مستقیم کار می‌کند؛ ساده‌ترین انتخاب همین است.' : ( S.tests.browser.ok ? 'سرور به Serper نمی‌رسد ولی مرورگر شما می‌رسد. مسیر مرورگر را انتخاب کنید، یا برای کار بدون باز ماندن صفحه، Worker کلادفلر بسازید.' : 'هیچ‌کدام از دو مسیر کار نکرد. Worker کلادفلر را بسازید؛ چند قدم پایین‌تر باز شد.' );
+			}
+		};
+		var loadCode = function () {
+			var pre = $( '[data-qtb-wz-code]', wz );
+			if ( pre && '…' === pre.textContent ) {
+				api( 'serp/setup', { op: 'worker_code' } ).then( function ( d ) { pre.textContent = d.code; } ).catch( function ( err ) { toast( err.message, true ); } );
+			}
+		};
+		var testBrowser = function () {
+			var row = $( '[data-qtb-wz-test="browser"]', wz );
+			$( '[data-msg]', row ).textContent = 'در حال تست…';
+			serperKey = null;
+			return api( 'serp/browser-key', {} ).then( function ( k ) {
+				serperKey = k;
+				return serperFetch( k.key, 'خرید گل آپارتمانی', k.gl, k.hl );
+			} ).then( function ( d ) {
+				var n = ( d.organic || [] ).length;
+				return setup( { op: 'browser_result', ok: n > 0 ? 1 : 0, msg: n > 0 ? 'وصل شد؛ ' + fa( n ) + ' نتیجه گرفته شد.' : 'پاسخ بدون نتیجه' } );
+			}, function ( err ) {
+				return setup( { op: 'browser_result', ok: 0, msg: err.message } );
+			} );
+		};
+		wz.addEventListener( 'click', function ( e ) {
+			var t;
+			if ( ( t = e.target.closest( '[data-qtb-wz-done]' ) ) ) {
+				var next = t.getAttribute( 'data-next' );
+				setup( { op: 'step', step: t.getAttribute( 'data-qtb-wz-done' ), done: 1, next: next } ).then( function () { if ( 'cf_code' === next ) { loadCode(); } } ).catch( function ( err ) { toast( err.message, true ); } );
+			} else if ( ( t = e.target.closest( '[data-qtb-wz-open]' ) ) ) {
+				var li = t.closest( '.qtb-wz-step' );
+				if ( li.classList.contains( 'is-locked' ) ) { toast( 'اول قدم قبلی را انجام دهید و تأیید کنید.', true ); return; }
+				S.step = t.getAttribute( 'data-qtb-wz-open' );
+				render();
+				if ( 'cf_code' === S.step ) { loadCode(); }
+			} else if ( e.target.closest( '[data-qtb-wz-savekey]' ) ) {
+				var key = $( '[data-qtb-wz-key]', wz ).value.trim();
+				setup( { op: 'save_key', key: key } ).then( function () { toast( 'کلید ذخیره شد؛ حالا اتصال را تست کنید.' ); } ).catch( function ( err ) { toast( err.message, true ); } );
+			} else if ( ( t = e.target.closest( '[data-qtb-wz-test-go]' ) ) || e.target.closest( '[data-qtb-wz-retest]' ) ) {
+				var b = t || e.target.closest( '[data-qtb-wz-retest]' );
+				b.disabled = true;
+				$( '[data-qtb-wz-test="direct"] [data-msg]', wz ).textContent = 'در حال تست…';
+				setup( { op: 'test', route: 'direct' } ).catch( function ( err ) { toast( err.message, true ); } ).then( testBrowser ).then( function () {
+					if ( S.tests.worker || S.worker_url ) { return setup( { op: 'test', route: 'worker' } ); }
+				} ).then( function () {
+					var ok = ( S.tests.direct && S.tests.direct.ok ) || ( S.tests.browser && S.tests.browser.ok );
+					if ( ! ok && 0 !== ( S.step || '' ).indexOf( 'cf_' ) && 'done' !== S.step ) { return setup( { op: 'step', step: 'test', done: 1, next: 'cf_account' } ); }
+				} ).catch( function ( err ) { toast( err.message, true ); } ).then( function () { b.disabled = false; } );
+			} else if ( ( t = e.target.closest( '[data-qtb-wz-use]' ) ) ) {
+				var r = t.getAttribute( 'data-qtb-wz-use' );
+				setup( { op: 'set_route', route: r } ).then( function () { toast( 'مسیر «' + routeNames[ r ] + '» انتخاب شد.' ); } ).catch( function ( err ) { toast( err.message, true ); } );
+			} else if ( e.target.closest( '[data-qtb-wz-copycode]' ) ) {
+				var code = $( '[data-qtb-wz-code]', wz ).textContent;
+				if ( navigator.clipboard ) { navigator.clipboard.writeText( code ).then( function () { toast( 'کد کپی شد؛ در ویرایشگر کلادفلر جای‌گذاری کنید.' ); } ); }
+			} else if ( e.target.closest( '[data-qtb-wz-savew]' ) ) {
+				var url = $( '[data-qtb-wz-wurl]', wz ).value.trim();
+				var msg = $( '[data-qtb-wz-wmsg]', wz );
+				msg.hidden = false;
+				msg.textContent = 'در حال ذخیره و تست…';
+				setup( { op: 'save_worker', url: url } ).then( function () {
+					return setup( { op: 'test', route: 'worker' } );
+				} ).then( function ( d ) {
+					msg.textContent = ( d.ok ? '✓ ' : '✗ ' ) + d.msg;
+					msg.className = 'qtb-wz-tip ' + ( d.ok ? 'is-ok' : 'is-bad' );
+					if ( d.ok ) {
+						return setup( { op: 'step', step: 'cf_url', done: 1, next: 'cf_url' } ).then( function () { return setup( { op: 'set_route', route: 'worker' } ); } ).then( function () { toast( 'Worker کلادفلر وصل شد و انتخاب شد.' ); } );
+					}
+				} ).catch( function ( err ) { msg.textContent = '✗ ' + err.message; msg.className = 'qtb-wz-tip is-bad'; } );
+			} else if ( e.target.closest( '[data-qtb-wz-reset]' ) ) {
+				if ( window.confirm( 'راهنما از اول شروع شود؟ کلید و مسیر فعلی پاک نمی‌شود.' ) ) { setup( { op: 'reset' } ); }
+			}
+		} );
+		render();
+		if ( 'cf_code' === S.step ) { loadCode(); }
+	}
+
+	// ---- Facet dictionary (workshop step «ویژگی‌ها») ----
+	$$( '[data-qtb-fx]' ).forEach( function ( box ) {
+		var toks = JSON.parse( box.getAttribute( 'data-toks' ) || '[]' );
+		var types = JSON.parse( box.getAttribute( 'data-types' ) || '[]' );
+		var fxEdit = function ( body, ok ) {
+			return api( 'ws/edit/' + wsPid, body ).then( function ( d ) { if ( ok ) { toast( ok ); } reloadKeepScroll(); return d; } ).catch( function ( err ) { toast( err.message, true ); } );
+		};
+		var drag = null;
+		box.addEventListener( 'dragstart', function ( e ) {
+			var li = e.target.closest( '[data-tok]' );
+			if ( ! li ) { return; }
+			drag = li;
+			li.classList.add( 'is-drag' );
+			box.classList.add( 'is-dragging' );
+			e.dataTransfer.effectAllowed = 'move';
+			try { e.dataTransfer.setData( 'text/plain', li.getAttribute( 'data-tok' ) ); } catch ( x ) {}
+		} );
+		box.addEventListener( 'dragend', function () {
+			if ( drag ) { drag.classList.remove( 'is-drag' ); }
+			drag = null;
+			box.classList.remove( 'is-dragging' );
+			$$( '.is-over', box ).forEach( function ( x ) { x.classList.remove( 'is-over' ); } );
+		} );
+		box.addEventListener( 'dragover', function ( e ) {
+			var lane = e.target.closest( '[data-fxlane]' );
+			if ( ! drag || ! lane ) { return; }
+			e.preventDefault();
+			$$( '.is-over', box ).forEach( function ( x ) { if ( x !== lane ) { x.classList.remove( 'is-over' ); } } );
+			lane.classList.add( 'is-over' );
+		} );
+		box.addEventListener( 'drop', function ( e ) {
+			var lane = e.target.closest( '[data-fxlane]' );
+			if ( ! drag || ! lane ) { return; }
+			e.preventDefault();
+			var to = lane.getAttribute( 'data-fxlane' );
+			if ( drag.closest( '[data-fxlane]' ) === lane ) { return; }
+			$( '[data-fxdrop]', lane ).appendChild( drag );
+			fxEdit( { op: 'fx_token', tok: drag.getAttribute( 'data-tok' ), t: to }, '«' + drag.getAttribute( 'data-tok' ) + '» به ردیف تازه رفت' );
+		} );
+		// A word: its role and the main spelling it is merged into.
+		var pop = null;
+		var closePop = function () { if ( pop && pop.parentNode ) { pop.parentNode.removeChild( pop ); } pop = null; };
+		document.addEventListener( 'click', function ( e ) { if ( pop && ! e.target.closest( '.qtb-pop' ) && ! e.target.closest( '[data-tok]' ) ) { closePop(); } } );
+		box.addEventListener( 'click', function ( e ) {
+			var li = e.target.closest( '[data-tok]' );
+			var b;
+			if ( li ) {
+				closePop();
+				var tok = li.getAttribute( 'data-tok' );
+				var cur = li.closest( '[data-fxlane]' ).getAttribute( 'data-fxlane' );
+				pop = document.createElement( 'div' );
+				pop.className = 'qtb-pop is-wide qtb-fx-pop';
+				pop.innerHTML = '<h4></h4><p class="qtb-small qtb-muted" data-ex></p><label class="qtb-small">نقش<select data-t></select></label><label class="qtb-small">یکی کردن با واژه دیگر <small>همان صفحه، نوشتار دیگر</small><input type="search" placeholder="جستجوی واژه اصلی…" data-q></label><ul data-list></ul><div class="qtb-inline"><button type="button" class="qtb-btn is-small" data-unmerge hidden>جدا کردن از واژه اصلی</button></div>';
+				$( 'h4', pop ).textContent = tok;
+				$( '[data-ex]', pop ).textContent = li.getAttribute( 'title' ) || '';
+				var sel = $( '[data-t]', pop );
+				types.forEach( function ( t ) { var o = document.createElement( 'option' ); o.value = t[ 0 ]; o.textContent = t[ 1 ]; o.selected = t[ 0 ] === cur; sel.appendChild( o ); } );
+				sel.addEventListener( 'change', function () { fxEdit( { op: 'fx_token', tok: tok, t: sel.value }, 'نقش «' + tok + '» عوض شد' ); } );
+				var c = li.getAttribute( 'data-c' );
+				var un = $( '[data-unmerge]', pop );
+				un.hidden = c === tok;
+				un.addEventListener( 'click', function () { fxEdit( { op: 'fx_token', tok: tok, c: tok }, '«' + tok + '» جدا شد' ); } );
+				var list = $( '[data-list]', pop );
+				var q = $( '[data-q]', pop );
+				var draw = function () {
+					var v = q.value.trim();
+					list.innerHTML = '';
+					toks.filter( function ( x ) { return x[ 0 ] !== tok && ( ! v || x[ 0 ].indexOf( v ) > -1 ); } ).slice( 0, 30 ).forEach( function ( x ) {
+						var it = document.createElement( 'li' );
+						var bt = document.createElement( 'button' );
+						bt.type = 'button';
+						bt.innerHTML = '<span></span><em></em>';
+						bt.firstChild.textContent = x[ 0 ];
+						bt.lastChild.textContent = fa( x[ 1 ] );
+						bt.addEventListener( 'click', function () { fxEdit( { op: 'fx_token', tok: tok, c: x[ 0 ] }, '«' + tok + '» با «' + x[ 0 ] + '» یکی شد' ); } );
+						it.appendChild( bt );
+						list.appendChild( it );
+					} );
+				};
+				q.addEventListener( 'input', draw );
+				draw();
+				document.body.appendChild( pop );
+				var r = li.getBoundingClientRect();
+				pop.style.top = ( window.scrollY + r.bottom + 6 ) + 'px';
+				pop.style.left = Math.max( 8, Math.min( window.innerWidth - pop.offsetWidth - 8, window.scrollX + r.left + r.width / 2 - pop.offsetWidth / 2 ) ) + 'px';
+			} else if ( e.target.closest( '[data-qtb-fxtype]' ) ) {
+				var label = window.prompt( 'نام نوع ویژگی (مفرد)، مثلاً «جنس» یا «شهر»:' );
+				if ( ! label ) { return; }
+				var plural = window.prompt( 'نام بخش این نوع در ساختار سایت (جمع)، مثلاً «جنس‌ها»:', label ) || label;
+				fxEdit( { op: 'fx_type', label: label, plural: plural }, 'نوع «' + label + '» اضافه شد' );
+			} else if ( ( b = e.target.closest( '[data-qtb-fxrename]' ) ) ) {
+				var l2 = window.prompt( 'نام نوع ویژگی:', b.getAttribute( 'data-label' ) );
+				if ( ! l2 ) { return; }
+				var p2 = window.prompt( 'نام بخش (جمع):', b.getAttribute( 'data-plural' ) ) || l2;
+				fxEdit( { op: 'fx_type', id: b.getAttribute( 'data-qtb-fxrename' ), label: l2, plural: p2 }, 'نام نوع عوض شد' );
+			} else if ( ( b = e.target.closest( '[data-qtb-fxdel]' ) ) ) {
+				if ( window.confirm( 'این نوع ویژگی حذف شود؟' ) ) { fxEdit( { op: 'fx_type_del', id: b.getAttribute( 'data-qtb-fxdel' ) }, 'نوع حذف شد' ); }
+			}
+		} );
+		var fs = $( '[data-qtb-fxsearch]', box );
+		if ( fs ) {
+			fs.addEventListener( 'input', function () {
+				var v = fs.value.trim();
+				$$( '[data-tok]', box ).forEach( function ( li ) { li.classList.toggle( 'is-dim', !! v && li.getAttribute( 'data-tok' ).indexOf( v ) < 0 ); li.classList.toggle( 'is-hit', !! v && li.getAttribute( 'data-tok' ).indexOf( v ) > -1 ); } );
+			} );
+		}
 	} );
 }() );

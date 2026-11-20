@@ -91,10 +91,17 @@ function qtb_serp_cache_count() {
  *
  * @return array|WP_Error normalised result.
  */
-function qtb_serp_fetch( $keyword ) {
+function qtb_serp_fetch( $keyword, $route = null ) {
 	$c = qtb_serp_conf();
 	if ( 'off' === $c['source'] ) {
 		return new WP_Error( 'qtb_serp_off', 'سرویس نتایج گوگل تنظیم نشده است.' );
+	}
+	$route = null === $route ? qtb_serp_route() : $route;
+	if ( 'serper' === $c['provider'] && 'browser' === $route ) {
+		return new WP_Error( 'qtb_serp_browser', 'مسیر «مرورگر» انتخاب شده: نتایج گوگل را مرورگر شما از Serper می‌گیرد، نه سرور.' );
+	}
+	if ( 'serper' === $c['provider'] && 'worker' === $route ) {
+		return qtb_serp_fetch_worker( $keyword, $c );
 	}
 	switch ( $c['provider'] ) {
 		case 'dataforseo':
@@ -150,6 +157,145 @@ function qtb_serp_fetch( $keyword ) {
 		default:
 			return qtb_serp_from_serper( $d );
 	}
+}
+
+/**
+ * How SERP requests reach Serper: direct (from the server), worker (a Cloudflare Worker
+ * relays them — for servers whose IP the service blocks) or browser (the reviewer's
+ * browser fetches them). Other providers are always direct.
+ */
+function qtb_serp_route() {
+	$r = (string) qtb_setting( 'serp_route', 'direct' );
+	if ( 'worker' === $r && '' === (string) qtb_setting( 'serp_worker_url', '' ) ) {
+		return 'direct';
+	}
+	return in_array( $r, array( 'direct', 'worker', 'browser' ), true ) ? $r : 'direct';
+}
+
+/**
+ * Serper through the Cloudflare Worker relay.
+ *
+ * @return array|WP_Error
+ */
+function qtb_serp_fetch_worker( $keyword, $c, $url = null, $secret = null ) {
+	$url    = untrailingslashit( (string) ( null !== $url ? $url : qtb_setting( 'serp_worker_url', '' ) ) );
+	$secret = (string) ( null !== $secret ? $secret : qtb_setting( 'serp_worker_secret', '' ) );
+	if ( '' === $url ) {
+		return new WP_Error( 'qtb_serp_off', 'آدرس Worker کلادفلر وارد نشده است.' );
+	}
+	$res = qtb_http( $url . '/search', array(
+		'method'  => 'POST',
+		'timeout' => 40,
+		'headers' => array( 'X-Relay-Secret' => $secret, 'X-API-KEY' => $c['key'], 'Content-Type' => 'application/json' ),
+		'body'    => wp_json_encode( array( 'q' => $keyword, 'gl' => $c['gl'], 'hl' => $c['hl'], 'num' => 10 ), JSON_UNESCAPED_UNICODE ),
+	) );
+	if ( is_wp_error( $res ) ) {
+		return new WP_Error( 'qtb_serp_http', 'سرور سایت به Worker کلادفلر نرسید: ' . qtb_net_error( $res ) . ' — اگر بارها تکرار شد، آدرس workers.dev از سرور شما در دسترس نیست؛ «مسیر مرورگر» را امتحان کنید.' );
+	}
+	$code = (int) wp_remote_retrieve_response_code( $res );
+	$d    = json_decode( (string) wp_remote_retrieve_body( $res ), true );
+	if ( is_array( $d ) && ! empty( $d['relay'] ) ) {
+		// The Worker itself answered (not Serper).
+		return new WP_Error( 403 === $code ? 'qtb_serp_auth' : 'qtb_serp_http', 'Worker کلادفلر: ' . (string) ( $d['message'] ?? 'خطا' ) );
+	}
+	if ( 200 !== $code || ! is_array( $d ) ) {
+		$msg = is_array( $d ) ? (string) ( $d['message'] ?? $d['error'] ?? '' ) : '';
+		if ( in_array( $code, array( 401, 403 ), true ) ) {
+			return new WP_Error( 'qtb_serp_auth', 'Serper کلید را رد کرد یا اعتبار حساب تمام شده است (HTTP ' . $code . ')' . ( $msg ? ': ' . mb_substr( $msg, 0, 160 ) : '' ) );
+		}
+		if ( 429 === $code ) {
+			return new WP_Error( 'qtb_serp_rate', 'سقف درخواست Serper پر شده؛ چند دقیقه بعد ادامه دهید.' );
+		}
+		return new WP_Error( 'qtb_serp_http', 'Worker یا Serper خطا داد (HTTP ' . $code . ')' . ( $msg ? ': ' . mb_substr( $msg, 0, 160 ) : '' ) );
+	}
+	return qtb_serp_from_serper( $d );
+}
+
+/**
+ * Code of the Cloudflare Worker relay (pasted by the user in the Cloudflare editor).
+ * It only forwards to Serper, and only with the secret of this site.
+ */
+function qtb_serp_worker_code( $secret ) {
+	$secret = preg_replace( '/[^A-Za-z0-9]/', '', (string) $secret );
+	return <<<JS
+// Ghotbnama SERP relay — forwards search requests from your WordPress site to Serper.dev.
+// Only requests that carry your site's secret are accepted.
+const SECRET = "{$secret}";
+
+export default {
+  async fetch(request) {
+    const json = (body, status) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+    if (request.method === "GET") {
+      return json({ relay: true, ok: true, message: "Ghotbnama relay is running" }, 200);
+    }
+    if (request.method !== "POST") {
+      return json({ relay: true, message: "method not allowed" }, 405);
+    }
+    if (request.headers.get("X-Relay-Secret") !== SECRET) {
+      return json({ relay: true, message: "secret mismatch: copy the code again from Ghotbnama settings" }, 403);
+    }
+    const res = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: { "X-API-KEY": request.headers.get("X-API-KEY") || "", "Content-Type": "application/json" },
+      body: await request.text(),
+    });
+    return new Response(res.body, { status: res.status, headers: { "Content-Type": "application/json" } });
+  },
+};
+JS;
+}
+
+/**
+ * Secret of the Worker relay (created once).
+ */
+function qtb_serp_worker_secret() {
+	$s = (string) qtb_setting( 'serp_worker_secret', '' );
+	if ( '' === $s ) {
+		$s = wp_generate_password( 32, false, false );
+		qtb_update_settings( array( 'serp_worker_secret' => $s ) );
+	}
+	return $s;
+}
+
+/**
+ * Test one route from the server: direct or worker.
+ *
+ * @return array {ok, msg, first}
+ */
+function qtb_serp_test_route( $route, $override = array() ) {
+	$c = array_merge( qtb_serp_conf(), array_filter( $override, 'strlen' ) );
+	if ( '' === (string) $c['key'] ) {
+		return array( 'ok' => false, 'msg' => 'کلید Serper وارد نشده است.' );
+	}
+	if ( 'worker' === $route ) {
+		$r = qtb_serp_fetch_worker( 'خرید گل آپارتمانی', $c, $override['worker_url'] ?? null );
+	} else {
+		$res = qtb_http( 'https://google.serper.dev/search', array(
+			'method'  => 'POST',
+			'timeout' => 25,
+			'headers' => array( 'X-API-KEY' => $c['key'], 'Content-Type' => 'application/json' ),
+			'body'    => wp_json_encode( array( 'q' => 'خرید گل آپارتمانی', 'gl' => $c['gl'], 'hl' => $c['hl'], 'num' => 10 ), JSON_UNESCAPED_UNICODE ),
+		) );
+		if ( is_wp_error( $res ) ) {
+			return array( 'ok' => false, 'msg' => 'سرور به Serper نرسید: ' . qtb_net_error( $res ) );
+		}
+		$code = (int) wp_remote_retrieve_response_code( $res );
+		$d    = json_decode( (string) wp_remote_retrieve_body( $res ), true );
+		if ( 200 !== $code || ! is_array( $d ) ) {
+			if ( in_array( $code, array( 401, 403 ), true ) && ! is_array( $d ) ) {
+				return array( 'ok' => false, 'blocked' => true, 'msg' => 'آی‌پی سرور سایت مسدود است (HTTP ' . $code . ' بدون پاسخ Serper). کلید شما احتمالاً سالم است؛ مسیر مرورگر یا Worker کلادفلر را امتحان کنید.' );
+			}
+			$msg = is_array( $d ) ? (string) ( $d['message'] ?? '' ) : '';
+			return array( 'ok' => false, 'msg' => in_array( $code, array( 401, 403 ), true ) ? 'Serper کلید را رد کرد یا اعتبار تمام شده (HTTP ' . $code . ')' . ( $msg ? ': ' . $msg : '' ) : 'Serper خطا داد (HTTP ' . $code . ')' . ( $msg ? ': ' . $msg : '' ) );
+		}
+		$r = qtb_serp_from_serper( $d );
+	}
+	if ( is_wp_error( $r ) ) {
+		return array( 'ok' => false, 'msg' => $r->get_error_message() );
+	}
+	return array( 'ok' => ! empty( $r['organic'] ), 'msg' => sprintf( 'وصل شد؛ %s نتیجه گرفته شد.', qtb_num( count( $r['organic'] ) ) ), 'first' => array_slice( array_map( function ( $o ) {
+		return array( 'p' => $o['p'], 'domain' => $o['domain'], 'title' => $o['title'] );
+	}, $r['organic'] ), 0, 3 ) );
 }
 
 /**

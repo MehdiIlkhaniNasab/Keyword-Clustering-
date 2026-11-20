@@ -17,7 +17,14 @@ $ti     = qtb_ws_topic_index( $ws, $tid );
 $t      = $ws['topics'][ $ti ];
 $states = qtb_ws_topic_states();
 $conf_l = array( 'high' => 'اطمینان زیاد', 'mid' => 'اطمینان متوسط', 'low' => 'اطمینان کم' );
-$why_l  = array( 'serp' => 'اشتراک نتایج گوگل', 'lexical' => 'شباهت معنایی (بدون سرپ)', 'ai' => 'جابه‌جایی هوش مصنوعی', 'user' => 'تصمیم شما', 'comp' => 'رقیب هر دو را با یک صفحه گرفته' );
+$why_l  = array( 'serp' => 'گوگل تأیید کرد: نتایج مشترک با صفحه', 'lexical' => 'شباهت معنایی (بدون سرپ)', 'ai' => 'جابه‌جایی هوش مصنوعی', 'user' => 'تصمیم شما', 'comp' => 'رقیب هر دو را با یک صفحه گرفته', 'facet' => 'همان ویژگی‌های صفحه', 'tail' => 'زیر آستانه، بدون شاهد گوگل' );
+$facet  = 'facet' === ( $project['cfg']['engine'] ?? 'facet' ) || array_filter( $t['clusters'], function ( $c ) {
+	return ! empty( $c['fx'] );
+} );
+$fxd    = qtb_fx_get( $project['id'] );
+$ftypes = qtb_fx_types( $fxd );
+$fwhy   = qtb_fx_why_labels();
+$TAIL   = 8; // Keywords shown before «+N more».
 $act_l  = array( 'move' => 'انتقال به', 'new' => 'کلاستر جدید', 'remove' => 'حذف', 'park' => 'پارکینگ' );
 $cl_js  = array();
 foreach ( $t['clusters'] as $c ) {
@@ -49,10 +56,14 @@ foreach ( $t['kws'] as $i ) {
 }
 $low = 0;
 $sug = 0;
+$rev = 0;
+$tails = 0;
 foreach ( $t['clusters'] as $c ) {
 	foreach ( $c['kws'] as $i ) {
 		$m    = $c['meta'][ $i ] ?? array();
 		$low += 'low' === ( $m['conf'] ?? '' ) ? 1 : 0;
+		$rev += ! empty( $m['review'] ) ? 1 : 0;
+		$tails += 'tail' === ( $m['why'] ?? '' ) ? 1 : 0;
 		$sug += ! empty( $m['ai'] ) && 'keep' !== $m['ai']['action'] && 'ai' !== ( $m['why'] ?? '' ) ? 1 : 0;
 	}
 }
@@ -65,7 +76,7 @@ foreach ( $ws['topics'] as $o ) {
 }
 $m = $t['metrics'];
 // A keyword chip.
-$chip = function ( $i, $c ) use ( $kws, $conf_l, $why_l, $act_l, $names ) {
+$chip = function ( $i, $c, $n = 0 ) use ( $kws, $conf_l, $why_l, $act_l, $names, $TAIL ) {
 	$kw   = $kws[ $i ];
 	$meta = $c ? ( $c['meta'][ $i ] ?? array() ) : array();
 	$conf = $meta['conf'] ?? ( $c ? 'mid' : '' );
@@ -90,7 +101,7 @@ $chip = function ( $i, $c ) use ( $kws, $conf_l, $why_l, $act_l, $names ) {
 		$tip[] = 'هوش مصنوعی: ' . $ai['reason'];
 	}
 	?>
-	<li draggable="true" data-kw="<?php echo esc_attr( $i ); ?>" data-v="<?php echo esc_attr( (int) $kw['v'] ); ?>" data-k="<?php echo esc_attr( $kw['key'] ); ?>" class="is-c-<?php echo esc_attr( $conf ); ?>" title="<?php echo esc_attr( implode( "\n", array_filter( $tip ) ) ); ?>">
+	<li draggable="true" data-kw="<?php echo esc_attr( $i ); ?>" data-v="<?php echo esc_attr( (int) $kw['v'] ); ?>" data-k="<?php echo esc_attr( $kw['key'] ); ?>" class="is-c-<?php echo esc_attr( $conf ); ?><?php echo $c && $n >= $TAIL ? ' is-tail' : ''; ?><?php echo ! empty( $meta['review'] ) ? ' is-rev' : ''; ?>" title=""<?php echo esc_attr( implode( "\n", array_filter( $tip ) ) ); ?>">
 		<?php if ( $c ) : ?><i class="qtb-conf is-<?php echo esc_attr( $conf ); ?>"></i><?php endif; ?>
 		<span><?php echo esc_html( $kw['k'] ); ?></span><?php echo $flag; // phpcs:ignore ?><?php echo ! empty( $kw['added'] ) && strtotime( $kw['added'] ) > time() - 30 * DAY_IN_SECONDS ? '<b class="qtb-new-tag" title="' . esc_attr( 'اضافه‌شده در ' . qtb_jdate( $kw['added'] ) ) . '">جدید</b>' : ''; ?><em><?php echo esc_html( qtb_num( $kw['v'] ) ); ?></em>
 		<span class="qtb-kw-acts">
@@ -137,15 +148,29 @@ $chip = function ( $i, $c ) use ( $kws, $conf_l, $why_l, $act_l, $names ) {
 	<?php if ( 'running' === $t['status'] ) : ?>
 		<p class="qtb-note is-warn"><?php echo qtb_icon( 'clock', 16 ); // phpcs:ignore ?><span>این موضوع در حال پردازش است؛ تغییرات را بعد از پایان انجام دهید.</span></p>
 	<?php endif; ?>
+	<?php if ( $facet && qtb_fx_stale( $project, $t ) ) : ?>
+		<p class="qtb-note is-warn"><?php echo qtb_icon( 'refresh', 16 ); // phpcs:ignore ?><span>فرهنگ ویژگی‌ها بعد از پردازش این موضوع تغییر کرده است. «پردازش دوباره» بزنید تا درخت صفحات با نقش‌های تازه ساخته شود (کلاسترهای قفل‌شده می‌مانند).</span></p>
+	<?php endif; ?>
+	<?php if ( $facet && $rev ) : ?>
+		<div class="qtb-bd-evidence">
+			<i></i>
+			<p><b><?php echo esc_html( sprintf( '%s زیرگروه بدون شاهد گوگل ادغام شد.', qtb_num( count( array_merge( ...array_map( function ( $c ) { return (array) ( $c['fx']['review'] ?? array() ); }, $t['clusters'] ) ?: array( array() ) ) ) ) ) ); ?></b>
+			<?php echo esc_html( qtb_serp_ready() ? 'این‌ها زیر آستانه بودند و نتیجه گوگل نداشتند. اگر صفحه جدا لازم است، در کارت روی «جدا کن» بزنید.' : 'سرویس نتایج گوگل وصل نیست، پس موارد مرزی فقط با آستانه تصمیم گرفته شد. اتصال Serper را کامل کنید و «پردازش دوباره» بزنید؛ یا در کارت‌ها روی «جدا کن» بزنید.' ); ?></p>
+			<?php if ( ! qtb_serp_ready() && qtb_can() ) : ?><a class="qtb-btn is-small" href="<?php echo esc_url( qtb_url( 'settings' ) ); ?>">اتصال Serper</a><?php endif; ?>
+			<button type="button" class="qtb-btn is-small is-ghost" data-qtb-bdreview>نمایش موارد بازبینی</button>
+		</div>
+	<?php endif; ?>
 
 	<div class="qtb-bd-tools">
 		<div class="qtb-seg" data-qtb-bdfilter>
 			<a href="#" class="is-active" data-f="all">همه</a>
 			<a href="#" data-f="low">اطمینان کم/متوسط</a>
 			<a href="#" data-f="ai">پیشنهادهای هوش مصنوعی</a>
+			<?php if ( $facet ) : ?><a href="#" data-f="review">نیاز به بازبینی<?php echo $rev ? ' (' . esc_html( qtb_num( $rev ) ) . ')' : ''; ?></a><?php endif; ?>
 		</div>
 		<input type="search" data-qtb-bdsearch placeholder="جستجوی کلمه در این موضوع…" style="max-width:240px">
 		<button type="button" class="qtb-btn is-small" data-qtb-bdmerge hidden><?php echo qtb_icon( 'layers', 14 ); // phpcs:ignore ?> ادغام <b data-n>۰</b> کلاستر</button>
+		<select data-qtb-bdbulksec hidden title="بردن کلاسترهای انتخاب‌شده به یک بخش" style="width:auto;min-height:34px"><option value="">انتقال انتخاب‌شده‌ها به بخش…</option></select>
 		<span class="qtb-small qtb-muted">کلمه را بکشید و روی کلاستر دیگر یا خانه‌های پایین رها کنید. نقطه رنگی = اطمینان: <i class="qtb-conf is-high"></i> زیاد <i class="qtb-conf is-mid"></i> متوسط <i class="qtb-conf is-low"></i> کم</span>
 	</div>
 
@@ -166,10 +191,22 @@ $chip = function ( $i, $c ) use ( $kws, $conf_l, $why_l, $act_l, $names ) {
 		$secs[ $sn ]['vol']   += (int) $c['vol'];
 		$secs[ $sn ]['cls'][]  = $c;
 	}
-	uksort( $secs, function ( $a, $b ) use ( $secs ) {
-		return ( '' === $a ) <=> ( '' === $b ) ?: $secs[ $b ]['vol'] <=> $secs[ $a ]['vol'];
+	$skel = qtb_fx_skeleton( $project );
+	// Main page first; blog, landings and «no section» last; the rest by demand.
+	$rank = function ( $n ) use ( $skel ) {
+		return '' === $n ? 4 : ( $n === $skel['main'] ? 0 : ( $n === $skel['blog'] ? 3 : ( $n === $skel['landing'] ? 2 : 1 ) ) );
+	};
+	uksort( $secs, function ( $a, $b ) use ( $secs, $rank ) {
+		return $rank( $a ) <=> $rank( $b ) ?: $secs[ $b ]['vol'] <=> $secs[ $a ]['vol'];
 	} );
 	$sec_names = array_values( array_filter( array_keys( $secs ), 'strlen' ) );
+	if ( $facet ) {
+		foreach ( qtb_fx_section_names( $project ) as $sn0 ) {
+			if ( ! in_array( qtb_key( $sn0 ), array_map( 'qtb_key', $sec_names ), true ) ) {
+				$sec_names[] = $sn0;
+			}
+		}
+	}
 	?>
 	<div class="qtb-bd-secs" data-sections="<?php echo esc_attr( wp_json_encode( $sec_names, JSON_UNESCAPED_UNICODE ) ); ?>">
 	<?php foreach ( $secs as $sn => $sec ) : ?>
@@ -181,7 +218,7 @@ $chip = function ( $i, $c ) use ( $kws, $conf_l, $why_l, $act_l, $names ) {
 		</div>
 	<div class="qtb-clusters qtb-bd-grid">
 		<?php foreach ( $sec['cls'] as $c ) : ?>
-			<div class="qtb-cl qtb-bd-cl<?php echo ! empty( $c['locked'] ) ? ' is-locked' : ''; ?>" data-cl="<?php echo esc_attr( $c['id'] ); ?>" data-drop="<?php echo esc_attr( $c['id'] ); ?>">
+			<div class="qtb-cl qtb-bd-cl<?php echo ! empty( $c['locked'] ) ? ' is-locked' : ''; ?><?php echo 'c:' === ( $c['fx']['key'] ?? '' ) ? ' is-root' : ''; ?>" data-cl="<?php echo esc_attr( $c['id'] ); ?>" data-drop="<?php echo esc_attr( $c['id'] ); ?>">
 				<div class="qtb-cl-h is-<?php echo esc_attr( $c['page'] ); ?>" draggable="true" data-cldrag="<?php echo esc_attr( $c['id'] ); ?>" title="برای بردن به بخش دیگر، سرتیتر کارت را بکشید">
 					<div style="min-width:0">
 						<h4><?php echo esc_html( $c['name'] ); ?></h4>
@@ -210,15 +247,45 @@ $chip = function ( $i, $c ) use ( $kws, $conf_l, $why_l, $act_l, $names ) {
 					<?php endif; ?>
 					<?php if ( ! empty( $c['store_match'] ) ) : ?><span class="qtb-chip"><?php echo esc_html( qtb_num( $c['store_match'] ) ); ?> محصول</span><?php endif; ?>
 				</div>
+				<?php if ( ! empty( $c['fx'] ) ) : ?>
+					<div class="qtb-cl-fx">
+						<?php foreach ( (array) $c['fx']['facets'] as $ft => $fty ) : ?>
+							<span class="qtb-fxchip is-<?php echo esc_attr( isset( qtb_fx_reserved()[ $fty ] ) ? $fty : 'own' ); ?>" title="<?php echo esc_attr( $ftypes[ $fty ]['label'] ?? '' ); ?>"><i><?php echo esc_html( $ftypes[ $fty ]['label'] ?? '' ); ?></i><?php echo esc_html( $ft ); ?></span>
+						<?php endforeach; ?>
+						<?php if ( ! empty( $fwhy[ $c['fx']['why'] ?? '' ] ) && 'root' !== $c['fx']['why'] ) : ?>
+							<span class="qtb-fxwhy is-<?php echo esc_attr( $c['fx']['why'] ); ?>"<?php echo ! empty( $c['fx']['ev']['note'] ) ? ' title="' . esc_attr( $c['fx']['ev']['note'] ) . '"' : ''; ?>><?php echo esc_html( $fwhy[ $c['fx']['why'] ] . ( isset( $c['fx']['ev']['shared'] ) && $c['fx']['ev']['shared'] >= 0 ? ' (' . qtb_num( $c['fx']['ev']['shared'] ) . ' نتیجه مشترک)' : '' ) ); ?></span>
+						<?php endif; ?>
+					</div>
+				<?php endif; ?>
 				<?php if ( ! empty( $c['page_reason'] ) ) : ?><div class="qtb-cl-why"><?php echo esc_html( $c['page_reason'] ); ?></div><?php endif; ?>
 				<?php if ( ! empty( $c['page_hint'] ) ) : ?><div class="qtb-cl-target">صفحه موجود: <?php echo qtb_link( $c['page_hint'], 40 ); // phpcs:ignore ?></div><?php endif; ?>
+				<?php $subs = ! empty( $c['fx'] ) ? qtb_fx_subgroups( $c, $kws ) : array(); ?>
+				<?php if ( $subs ) : ?>
+					<details class="qtb-cl-subs"<?php echo array_filter( array_column( $subs, 'review' ) ) ? ' open' : ''; ?>>
+						<summary><?php echo esc_html( sprintf( '%s زیرگروه داخل این صفحه', qtb_num( count( $subs ) ) ) ); ?><?php $nr = count( array_filter( array_column( $subs, 'review' ) ) ); echo $nr ? ' <b>' . esc_html( qtb_num( $nr ) . ' بازبینی' ) . '</b>' : ''; // phpcs:ignore ?></summary>
+						<ul>
+							<?php foreach ( array_slice( $subs, 0, 8, true ) as $nk => $sg ) : ?>
+								<li class="<?php echo $sg['review'] ? 'is-rev' : ''; ?>" title="<?php echo esc_attr( ( $why_l[ $sg['why'] ] ?? '' ) . ( $sg['shared'] >= 0 ? ' · ' . qtb_num( $sg['shared'] ) . ' نتیجه مشترک' : '' ) ); ?>">
+									<i class="qtb-sg-dot is-<?php echo esc_attr( $sg['why'] ); ?>"></i>
+									<span><?php echo esc_html( $kws[ $sg['head'] ]['k'] ?? '' ); ?></span>
+									<em><?php echo esc_html( qtb_num( count( $sg['kws'] ) ) . ' کلمه · ' . qtb_num( $sg['vol'] ) ); ?></em>
+									<button type="button" class="qtb-sg-split" data-qtb-split="<?php echo esc_attr( $nk ); ?>" data-cid="<?php echo esc_attr( $c['id'] ); ?>" title="این زیرگروه (و کوچک‌ترهای زیرش) صفحه جدا شود">جدا کن</button>
+								</li>
+							<?php endforeach; ?>
+							<?php if ( count( $subs ) > 8 ) : ?><li class="qtb-sg-more"><?php echo esc_html( sprintf( 'و %s زیرگروه کوچک‌تر؛ کلمه‌هایشان در فهرست زیر است.', qtb_num( count( $subs ) - 8 ) ) ); ?></li><?php endif; ?>
+						</ul>
+					</details>
+				<?php endif; ?>
 				<ul>
 					<?php
-					foreach ( $c['kws'] as $i ) {
-						$chip( $i, $c );
+					foreach ( $c['kws'] as $n => $i ) {
+						$chip( $i, $c, $n );
 					}
 					?>
 				</ul>
+				<?php if ( count( $c['kws'] ) > $TAIL ) : ?>
+					<button type="button" class="qtb-cl-more" data-qtb-more><span data-closed><?php echo esc_html( sprintf( '+ %s کلمه دیگر', qtb_num( count( $c['kws'] ) - $TAIL ) ) ); ?></span><span data-open>بستن</span></button>
+				<?php endif; ?>
 				<div class="qtb-cl-foot"><span>جمع <b data-vol><?php echo esc_html( qtb_num( $c['vol'] ) ); ?></b> · <span data-n><?php echo esc_html( qtb_num( count( $c['kws'] ) ) ); ?></span> کلمه</span></div>
 			</div>
 		<?php endforeach; ?>

@@ -463,7 +463,9 @@ function qtb_book_research( $project ) {
 		}
 	}
 	foreach ( qtb_sort( $R['removed'], 'v' ) as $x ) {
-		$rows[] = array( $x['k'], (int) $x['v'], qtb_c( 'حذف', array( 'color' => '9A3B37', 'h' => 'center' ) ), $reasons[ $x['r'] ] ?? $x['r'], (string) ( $x['d'] ?? '' ) );
+		$rows[] = ! empty( $x['park'] )
+			? array( $x['k'], (int) $x['v'], qtb_c( 'پارکینگ', array( 'b' => true, 'color' => '7A5B0C', 'bg' => 'F9EFCF', 'h' => 'center' ) ), 'برای تصمیم بعدی', (string) ( $x['d'] ?? '' ) )
+			: array( $x['k'], (int) $x['v'], qtb_c( 'حذف', array( 'color' => '9A3B37', 'h' => 'center' ) ), $reasons[ $x['r'] ] ?? $x['r'], (string) ( $x['d'] ?? '' ) );
 	}
 	$sheets[] = qtb_xtable( 'حذف‌شده و پارکینگ', 'کلمات کنار گذاشته‌شده', 'برای شفافیت: هر کلمه با دلیل. کلمات پارکینگ را بعداً می‌توان به پروژه برگرداند.', array( 'کلمه' => array( 34, '' ), 'حجم' => array( 10, 'center' ), 'وضعیت' => array( 11, 'center' ), 'دلیل' => array( 30, '' ), 'جزئیات' => array( 34, '' ) ), $rows, 'A0A9A4' );
 

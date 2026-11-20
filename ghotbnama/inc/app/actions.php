@@ -94,6 +94,11 @@ function qtb_handle_post( $route ) {
 				'brands'      => qtb_list( $post['brands'] ?? '' ),
 				'competitors' => qtb_list( $post['competitors'] ?? '' ),
 				'review_mode' => 'single' === ( $post['review_mode'] ?? '' ) ? 'single' : 'batch',
+				'engine'      => 'classic' === ( $post['engine'] ?? '' ) ? 'classic' : 'facet',
+				'split_pct'   => max( 1, min( 60, (float) ( $post['split_pct'] ?? 10 ) ) ),
+				'min_page'    => max( 0, (int) ( $post['min_page'] ?? 0 ) ),
+				'promote_pct' => max( 1, min( 100, (float) ( $post['promote_pct'] ?? 15 ) ) ),
+				'biz_kind'    => in_array( $post['biz_kind'] ?? '', array( 'shop', 'service', 'content' ), true ) ? $post['biz_kind'] : 'shop',
 			) ), $id );
 			qtb_flash_set( 'پروفایل کسب‌وکار ذخیره شد.' );
 			wp_safe_redirect( qtb_project_url( $id, 'workshop', array( 'ws' => 'profile' ) ) );

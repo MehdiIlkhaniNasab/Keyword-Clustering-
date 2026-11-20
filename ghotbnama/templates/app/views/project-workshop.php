@@ -40,8 +40,9 @@ $approved = count( array_filter( $ws['topics'], function ( $t ) {
 $steps = array(
 	'profile' => array( '۱', 'پروفایل کسب‌وکار' ),
 	'triage'  => array( '۲', 'غربال کلمات' ),
-	'topics'  => array( '۳', 'موضوع‌ها و بازبینی' ),
-	'final'   => array( '۴', 'خروجی نهایی' ),
+	'facets'  => array( '۳', 'ویژگی‌ها' ),
+	'topics'  => array( '۴', 'موضوع‌ها و بازبینی' ),
+	'final'   => array( '۵', 'خروجی نهایی' ),
 );
 $url = function ( $s, $args = array() ) use ( $project ) {
 	return qtb_project_url( $project['id'], 'workshop', array_merge( array( 'ws' => $s ), $args ) );

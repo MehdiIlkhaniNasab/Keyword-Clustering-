@@ -390,11 +390,11 @@ function qtb_rest_ws_start( $req ) {
 		return new WP_Error( 'qtb_ws_busy', 'یک کار دیگر در حال اجراست؛ صبر کنید تا تمام شود.', array( 'status' => 409 ) );
 	}
 	$action = (string) $req['action'];
-	if ( ! in_array( $action, array( 'triage', 'topics', 'topic', 'add' ), true ) ) {
+	if ( ! in_array( $action, array( 'triage', 'topics', 'topic', 'add', 'facets' ), true ) ) {
 		return new WP_Error( 'qtb_ws', 'کار نامعتبر.', array( 'status' => 400 ) );
 	}
 	// Rebuilding the keyword list or the topics resets the review: managers only.
-	if ( 'topic' !== $action && ! qtb_can() ) {
+	if ( ! in_array( $action, array( 'topic', 'facets' ), true ) && ! qtb_can() ) {
 		return new WP_Error( 'qtb_ws_denied', 'شروع دوباره غربال یا ساخت دوباره موضوع‌ها با مدیر سئو است.', array( 'status' => 403 ) );
 	}
 	$args = array();
@@ -589,4 +589,168 @@ function qtb_rest_ws_finalize( $req ) {
 	$res           = qtb_data_get( $p['id'], 'ws_final', array() );
 	$res['status'] = $st;
 	return $res;
+}
+
+// ---------------------------------------------------------------------------
+// Serper connection guide and the browser route.
+// ---------------------------------------------------------------------------
+
+add_action( 'rest_api_init', function () {
+	$ns = 'ghotbnama/v1';
+	register_rest_route( $ns, '/serp/setup', array( 'methods' => 'POST', 'callback' => 'qtb_rest_serp_setup', 'permission_callback' => function () {
+		return qtb_can();
+	} ) );
+	register_rest_route( $ns, '/serp/browser-key', array( 'methods' => 'POST', 'callback' => 'qtb_rest_serp_browser_key', 'permission_callback' => function () {
+		return qtb_can_review();
+	} ) );
+	register_rest_route( $ns, '/ws/serp/(?P<id>\d+)', array( 'methods' => 'POST', 'callback' => 'qtb_rest_ws_serp', 'permission_callback' => function () {
+		return qtb_can_review();
+	} ) );
+} );
+
+/**
+ * State of the Serper guide (for the settings page).
+ */
+function qtb_serp_setup_state() {
+	$s   = qtb_settings();
+	$c   = qtb_serp_conf();
+	$wz  = wp_parse_args( (array) $s['serp_wizard'], array( 'step' => 'account', 'done' => array(), 'tests' => array() ) );
+	return array(
+		'has_key'    => 'serper' === $c['provider'] && '' !== (string) $c['key'],
+		'key_mask'   => 'serper' === $c['provider'] ? qtb_mask( $c['key'] ) : '',
+		'key_from'   => $c['source'],
+		'provider'   => $c['provider'],
+		'route'      => qtb_serp_route(),
+		'worker_url' => (string) $s['serp_worker_url'],
+		'step'       => (string) $wz['step'],
+		'done'       => array_values( (array) $wz['done'] ),
+		'tests'      => (array) $wz['tests'],
+	);
+}
+
+/**
+ * Save the guide's progress.
+ */
+function qtb_serp_setup_save( $changes ) {
+	$wz = wp_parse_args( (array) qtb_setting( 'serp_wizard', array() ), array( 'step' => 'account', 'done' => array(), 'tests' => array() ) );
+	foreach ( $changes as $k => $v ) {
+		$wz[ $k ] = $v;
+	}
+	qtb_update_settings( array( 'serp_wizard' => $wz ) );
+}
+
+/**
+ * The Serper connection guide: one operation per step.
+ */
+function qtb_rest_serp_setup( $req ) {
+	qtb_raise_limits( 90 );
+	$op    = (string) $req['op'];
+	$steps = array( 'account', 'key', 'test', 'cf_account', 'cf_worker', 'cf_code', 'cf_url', 'done' );
+	switch ( $op ) {
+		case 'state':
+			break;
+		case 'step': // {step, done?}: mark a step done and open the next one.
+			$step = (string) $req['step'];
+			if ( ! in_array( $step, $steps, true ) ) {
+				return new WP_Error( 'qtb_serp', 'مرحله نامعتبر.', array( 'status' => 400 ) );
+			}
+			$st   = qtb_serp_setup_state();
+			$done = $st['done'];
+			if ( $req['done'] && ! in_array( $step, $done, true ) ) {
+				$done[] = $step;
+			}
+			$next = (string) ( $req['next'] ?: $step );
+			qtb_serp_setup_save( array( 'done' => $done, 'step' => in_array( $next, $steps, true ) ? $next : $step ) );
+			break;
+		case 'save_key': // {key}.
+			$key = trim( sanitize_text_field( (string) $req['key'] ) );
+			if ( '' === $key || false !== strpos( $key, '•' ) ) {
+				return new WP_Error( 'qtb_serp', 'کلید API را کامل از داشبورد Serper کپی و اینجا جای‌گذاری کنید.', array( 'status' => 400 ) );
+			}
+			if ( ! preg_match( '/^[A-Za-z0-9]{20,80}$/', $key ) ) {
+				return new WP_Error( 'qtb_serp', 'این شبیه کلید Serper نیست (کلید فقط حروف انگلیسی و عدد است، حدود ۴۰ نویسه). دوباره از دکمه کپی داشبورد استفاده کنید.', array( 'status' => 400 ) );
+			}
+			qtb_update_settings( array( 'serp_source' => 'own', 'serp_provider' => 'serper', 'serp_key' => $key ) );
+			$st = qtb_serp_setup_state();
+			qtb_serp_setup_save( array( 'done' => array_values( array_unique( array_merge( $st['done'], array( 'key' ) ) ) ), 'step' => 'test' ) );
+			break;
+		case 'test': // {route: direct|worker, worker_url?} — server-side routes.
+			$route = 'worker' === $req['route'] ? 'worker' : 'direct';
+			$over  = array();
+			if ( 'worker' === $route && $req['worker_url'] ) {
+				$over['worker_url'] = esc_url_raw( trim( (string) $req['worker_url'] ) );
+			}
+			$r     = qtb_serp_test_route( $route, $over );
+			$tests = qtb_serp_setup_state()['tests'];
+			$tests[ $route ] = array( 'ok' => (bool) $r['ok'], 'msg' => $r['msg'], 'at' => qtb_now() );
+			qtb_serp_setup_save( array( 'tests' => $tests ) );
+			return array_merge( $r, array( 'state' => qtb_serp_setup_state() ) );
+		case 'browser_result': // {ok, msg}: the browser reports its own test.
+			$tests            = qtb_serp_setup_state()['tests'];
+			$tests['browser'] = array( 'ok' => (bool) $req['ok'], 'msg' => sanitize_text_field( (string) $req['msg'] ), 'at' => qtb_now() );
+			qtb_serp_setup_save( array( 'tests' => $tests ) );
+			break;
+		case 'save_worker': // {url}.
+			$url = esc_url_raw( trim( (string) $req['url'] ) );
+			if ( ! preg_match( '#^https://[a-z0-9.-]+(/.*)?$#i', $url ) ) {
+				return new WP_Error( 'qtb_serp', 'آدرس Worker باید با https:// شروع شود؛ مثل https://ghotbnama-serp.نام-شما.workers.dev', array( 'status' => 400 ) );
+			}
+			qtb_update_settings( array( 'serp_worker_url' => untrailingslashit( preg_replace( '#/search$#', '', $url ) ) ) );
+			break;
+		case 'set_route': // {route}.
+			$route = in_array( $req['route'], array( 'direct', 'worker', 'browser' ), true ) ? (string) $req['route'] : 'direct';
+			qtb_update_settings( array( 'serp_route' => $route ) );
+			$st = qtb_serp_setup_state();
+			qtb_serp_setup_save( array( 'step' => 'done', 'done' => array_values( array_unique( array_merge( $st['done'], array( 'test' ) ) ) ) ) );
+			break;
+		case 'worker_code':
+			return array( 'code' => qtb_serp_worker_code( qtb_serp_worker_secret() ), 'state' => qtb_serp_setup_state() );
+		case 'reset':
+			qtb_update_settings( array( 'serp_wizard' => array() ) );
+			break;
+		default:
+			return new WP_Error( 'qtb_serp', 'دستور نامعتبر.', array( 'status' => 400 ) );
+	}
+	return array( 'ok' => true, 'state' => qtb_serp_setup_state() );
+}
+
+/**
+ * The Serper key for the browser route (the reviewer's browser calls Serper itself).
+ */
+function qtb_rest_serp_browser_key( $req ) {
+	$c = qtb_serp_conf();
+	if ( 'serper' !== $c['provider'] || '' === (string) $c['key'] ) {
+		return new WP_Error( 'qtb_serp', 'کلید Serper در تنظیمات ذخیره نشده است.', array( 'status' => 400 ) );
+	}
+	return array( 'key' => $c['key'], 'gl' => $c['gl'], 'hl' => $c['hl'] );
+}
+
+/**
+ * Results fetched by the browser: {items: [{i, k, data}]} → cache and the project's SERPs.
+ */
+function qtb_rest_ws_serp( $req ) {
+	$p = qtb_rest_project( $req );
+	if ( is_wp_error( $p ) ) {
+		return $p;
+	}
+	$kws   = qtb_data_get( $p['id'], 'keywords', array() );
+	$serps = qtb_data_get( $p['id'], 'serps', array() );
+	$n     = 0;
+	foreach ( array_slice( (array) $req['items'], 0, 60 ) as $it ) {
+		$i = (int) ( $it['i'] ?? -1 );
+		$d = $it['data'] ?? null;
+		if ( ! isset( $kws[ $i ] ) || ! is_array( $d ) || ! isset( $d['organic'] ) ) {
+			continue;
+		}
+		// The keyword must be the one the server asked for.
+		if ( qtb_key( (string) ( $it['k'] ?? '' ) ) !== qtb_key( $kws[ $i ]['k'] ) ) {
+			continue;
+		}
+		$res = qtb_serp_from_serper( $d );
+		qtb_serp_store( $kws[ $i ]['k'], $res );
+		$serps[ $i ] = $res;
+		++$n;
+	}
+	qtb_data_put( $p['id'], 'serps', $serps );
+	return array( 'ok' => true, 'n' => $n );
 }

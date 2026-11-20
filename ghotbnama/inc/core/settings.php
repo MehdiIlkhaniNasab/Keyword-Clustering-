@@ -35,7 +35,7 @@ function qtb_settings_defaults() {
 		'dfs_password'           => '',
 		'serp_gl'                => 'ir',
 		'serp_hl'                => 'fa',
-		'serp_cache_days'        => 30,
+		'serp_cache_days'        => 90,
 		'serp_max_project'       => 2000, // Hard cap of paid SERP requests per run.
 		'serp_route'             => 'direct', // Serper: direct | worker (Cloudflare relay) | browser (the reviewer's browser).
 		'serp_worker_url'        => '',

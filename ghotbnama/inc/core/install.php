@@ -67,10 +67,27 @@ function qtb_install() {
  * Data migrations between versions.
  */
 function qtb_migrate( $from ) {
-	global $wpdb;
-	if ( '' === $from || version_compare( $from, '2', '>=' ) ) {
+	if ( '' === $from ) {
 		return;
 	}
+	if ( version_compare( $from, '2', '<' ) ) {
+		qtb_migrate_v2();
+	}
+	// v3: SERP cache kept 90 days (was 30) unless someone chose another number.
+	if ( version_compare( $from, '3', '<' ) ) {
+		$s = get_option( 'qtb_settings', array() );
+		if ( is_array( $s ) && 30 === (int) ( $s['serp_cache_days'] ?? 30 ) ) {
+			$s['serp_cache_days'] = 90;
+			update_option( 'qtb_settings', $s, false );
+		}
+	}
+}
+
+/**
+ * v2 data migration.
+ */
+function qtb_migrate_v2() {
+	global $wpdb;
 	// v2: four page types (landing / archive / product / article).
 	$ids = $wpdb->get_col( 'SELECT id FROM ' . qtb_table( 'projects' ) ); // phpcs:ignore
 	foreach ( (array) $ids as $pid ) {

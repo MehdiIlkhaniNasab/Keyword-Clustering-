@@ -276,10 +276,29 @@ function qtb_ws_triage_import( $project, &$job ) {
  * Rule cleaning (duplicates, marketplaces, junk, negatives) and annotation.
  */
 function qtb_ws_triage_clean( $project, &$job ) {
+	// SERPs already paid for are kept by keyword text: the new list numbers keywords anew.
+	$old_kws   = qtb_data_get( $project['id'], 'keywords', array() );
+	$old_serps = qtb_data_get( $project['id'], 'serps', array() );
+	$by_text   = array();
+	foreach ( $old_serps as $i => $s ) {
+		if ( isset( $old_kws[ $i ] ) ) {
+			$by_text[ qtb_key( $old_kws[ $i ]['k'] ) ] = $s;
+		}
+	}
 	$pj = array( 'log' => array() );
 	$r  = qtb_step_clean( $project, $pj );
 	if ( is_wp_error( $r ) ) {
 		return $r;
+	}
+	$serps = array();
+	foreach ( qtb_data_get( $project['id'], 'keywords', array() ) as $i => $kw ) {
+		if ( isset( $by_text[ qtb_key( $kw['k'] ) ] ) ) {
+			$serps[ $i ] = $by_text[ qtb_key( $kw['k'] ) ];
+		}
+	}
+	qtb_data_put( $project['id'], 'serps', $serps );
+	if ( $serps ) {
+		qtb_job_log( $job, sprintf( 'نتایج گوگل %s کلمه از قبل موجود بود و نگه داشته شد (دوباره خریده نمی‌شود).', qtb_num( count( $serps ) ) ) );
 	}
 	$job['log'] = array_merge( $job['log'], $pj['log'] );
 	$kws        = qtb_data_get( $project['id'], 'keywords', array() );
@@ -1322,7 +1341,38 @@ function qtb_ws_topic_ai_cl( $project, &$job, $deadline ) {
 				}, array_slice( $c['kws'], 0, 6 ) ),
 			);
 		}
-		$res = qtb_ai_review_clusters( $project, $ws, $t, $batch );
+		// A cluster that did not change since its last review (same members, page, Google
+		// signal and project rules) reuses that answer: no tokens spent twice.
+		$memo  = (array) qtb_data_get( $pid, 'ai_cl_memo', array() );
+		$rkey  = md5( wp_json_encode( array_column( (array) $ws['rules'], 'text' ) ) . '|' . $t['name'] );
+		$res   = array();
+		$fresh = array();
+		$keys  = array();
+		foreach ( $batch as $it ) {
+			$copy = $it;
+			unset( $copy['cid'] );
+			$keys[ $it['cid'] ] = md5( wp_json_encode( $copy, JSON_UNESCAPED_UNICODE ) . $rkey );
+			if ( isset( $memo[ $keys[ $it['cid'] ] ] ) ) {
+				$res[ $it['cid'] ] = $memo[ $keys[ $it['cid'] ] ];
+			} else {
+				$fresh[] = $it;
+			}
+		}
+		$job['m_ai_reused'] = (int) ( $job['m_ai_reused'] ?? 0 ) + count( $res );
+		if ( $fresh ) {
+			$got = qtb_ai_review_clusters( $project, $ws, $t, $fresh );
+			if ( ! is_wp_error( $got ) ) {
+				foreach ( $got as $cid => $a ) {
+					$res[ $cid ] = $a;
+					if ( isset( $keys[ $cid ] ) ) {
+						$memo[ $keys[ $cid ] ] = $a;
+					}
+				}
+				qtb_data_put( $pid, 'ai_cl_memo', array_slice( $memo, -4000, null, true ) );
+			} else {
+				$res = $got;
+			}
+		}
 		if ( is_wp_error( $res ) ) {
 			$job['sub']['fail'] = (int) ( $job['sub']['fail'] ?? 0 ) + 1;
 			if ( $job['sub']['fail'] > 2 ) {
@@ -1367,6 +1417,9 @@ function qtb_ws_topic_ai_cl( $project, &$job, $deadline ) {
 	}
 	$ws['topics'][ $ti ] = $t;
 	qtb_ws_put( $pid, $ws );
+	if ( ! empty( $job['m_ai_reused'] ) ) {
+		qtb_job_log( $job, sprintf( 'بازبینی هوشمند: %s کلاستر بدون تغییر بود و جواب قبلی‌اش دوباره استفاده شد (بدون مصرف توکن).', qtb_num( $job['m_ai_reused'] ) ) );
+	}
 	return true;
 }
 

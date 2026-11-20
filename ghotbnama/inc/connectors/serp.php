@@ -44,7 +44,7 @@ function qtb_serp_hash( $keyword ) {
  */
 function qtb_serp_cached_many( $keywords ) {
 	global $wpdb;
-	$days   = max( 1, (int) qtb_setting( 'serp_cache_days', 30 ) );
+	$days   = max( 1, (int) qtb_setting( 'serp_cache_days', 90 ) );
 	$since  = gmdate( 'Y-m-d H:i:s', time() - $days * DAY_IN_SECONDS );
 	$hashes = array_values( array_unique( array_map( 'qtb_serp_hash', (array) $keywords ) ) );
 	$out    = array();

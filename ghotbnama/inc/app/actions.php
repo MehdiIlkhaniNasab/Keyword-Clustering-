@@ -124,7 +124,7 @@ function qtb_handle_post( $route ) {
 				'dfs_login'        => sanitize_text_field( (string) ( $post['dfs_login'] ?? '' ) ),
 				'serp_gl'          => sanitize_key( (string) ( $post['serp_gl'] ?? 'ir' ) ) ?: 'ir',
 				'serp_hl'          => sanitize_key( (string) ( $post['serp_hl'] ?? 'fa' ) ) ?: 'fa',
-				'serp_cache_days'  => max( 1, min( 180, (int) ( $post['serp_cache_days'] ?? 30 ) ) ),
+				'serp_cache_days'  => max( 1, min( 180, (int) ( $post['serp_cache_days'] ?? 90 ) ) ),
 				'serp_max_project' => max( 0, (int) ( $post['serp_max_project'] ?? 2000 ) ),
 				'google_source'    => 'own' === ( $post['google_source'] ?? '' ) ? 'own' : 'sokan',
 				'proxy_mode'       => in_array( $post['proxy_mode'] ?? '', array( 'smart', 'all', 'none' ), true ) ? $post['proxy_mode'] : 'smart',

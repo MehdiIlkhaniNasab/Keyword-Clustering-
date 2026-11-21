@@ -980,6 +980,97 @@ function qtb_fx_decide( $fx, $sub, $tree, $opts ) {
 }
 
 /**
+ * Keyword-level check after the pages are formed: each keyword's own top 10 is compared
+ * with every page (its best keywords). A keyword that is not similar to its own page but
+ * clearly similar to another one moves there, flagged for review. Page heads stay.
+ *
+ * @param int $moved Keywords moved (out).
+ * @return array groups
+ */
+function qtb_fx_refine( $groups, $sub, $serps, $hubs, $base, &$moved = 0 ) {
+	$moved = 0;
+	$reps  = array();
+	foreach ( $groups as $gi => $g ) {
+		$reps[ $gi ] = array();
+		foreach ( $g['kws'] as $i ) {
+			if ( ! empty( $serps[ $i ]['organic'] ) ) {
+				$reps[ $gi ][] = $i;
+				if ( count( $reps[ $gi ] ) >= 3 ) {
+					break;
+				}
+			}
+		}
+	}
+	$score = function ( $i, $gi ) use ( $reps, $serps, $hubs ) {
+		$best = null;
+		foreach ( $reps[ $gi ] as $r ) {
+			if ( $r === $i ) {
+				continue;
+			}
+			$o = qtb_fx_overlap( $serps, $hubs, $i, $r );
+			if ( $o && ( null === $best || $o[0] + 0.5 * $o[1] > $best[0] + 0.5 * $best[1] ) ) {
+				$best = $o;
+			}
+		}
+		return $best;
+	};
+	$moves = array();
+	foreach ( $groups as $gi => $g ) {
+		if ( ! empty( $g['seed'] ) || null !== ( $g['lock'] ?? null ) ) {
+			continue;
+		}
+		foreach ( $g['kws'] as $i ) {
+			if ( empty( $serps[ $i ]['organic'] ) || in_array( $i, $reps[ $gi ], true ) && $reps[ $gi ][0] === $i ) {
+				continue;
+			}
+			$own = $score( $i, $gi );
+			if ( null === $own || $own[0] >= $base ) {
+				continue; // Similar to its own page (or nothing to compare with): stays.
+			}
+			$best = null;
+			foreach ( $groups as $gj => $h ) {
+				if ( $gj === $gi || ( $h['fx']['info'] ?? false ) !== ( $g['fx']['info'] ?? false ) ) {
+					continue;
+				}
+				$o = $score( $i, $gj );
+				if ( $o && $o[0] >= $base + 1 && $o[0] >= $own[0] + 2 && ( null === $best || $o[0] > $best[1][0] ) ) {
+					$best = array( $gj, $o );
+				}
+			}
+			if ( $best ) {
+				$moves[ $i ] = array( $gi, $best[0], $best[1][0], $own[0] );
+			}
+		}
+	}
+	foreach ( $moves as $i => $mv ) {
+		list( $from, $to, $sh, $was ) = $mv;
+		$groups[ $from ]['kws'] = array_values( array_diff( $groups[ $from ]['kws'], array( $i ) ) );
+		$m = $groups[ $from ]['meta'][ $i ] ?? array();
+		unset( $groups[ $from ]['meta'][ $i ] );
+		$groups[ $to ]['kws'][]       = $i;
+		$groups[ $to ]['meta'][ $i ]  = array( 'conf' => 'mid', 'shared' => $sh, 'alt' => null, 'alt_shared' => $was, 'why' => 'serp_kw', 'review' => 1, 'node' => $m['node'] ?? ( 'c:' . implode( ' ', array_keys( (array) ( $groups[ $from ]['fx']['facets'] ?? array() ) ) ) ), 'from' => $i );
+		++$moved;
+	}
+	foreach ( $groups as $gi => &$g ) {
+		if ( ! $g['kws'] ) {
+			continue;
+		}
+		$fx   = $g['fx'] ?? null;
+		$meta = $g['meta'];
+		$lock = $g['lock'] ?? null;
+		$seed = $g['seed'] ?? null;
+		$g    = array_merge( qtb_group_make( $sub, $g['kws'] ), array( 'meta' => $meta, 'fx' => $fx, 'lock' => $lock ) );
+		if ( $seed ) {
+			$g['seed'] = $seed;
+		}
+	}
+	unset( $g );
+	return array_values( array_filter( $groups, function ( $g ) {
+		return ! empty( $g['kws'] ) || null !== ( $g['lock'] ?? null );
+	} ) );
+}
+
+/**
  * Page type from Google's top 3 (what Google prefers for this search): the top 3 of up to
  * three keywords of the cluster. Two thirds shop pages (product / category / marketplace)
  * → a commercial page (product when product pages lead and the store has one matching
@@ -1322,8 +1413,9 @@ function qtb_fx_subgroups( $c, $kws ) {
 		}
 		$k = $m['node'];
 		if ( ! isset( $out[ $k ] ) ) {
-			$out[ $k ] = array( 'head' => (int) ( $m['from'] ?? $i ), 'kws' => array(), 'vol' => 0, 'review' => 0, 'why' => (string) ( $m['why'] ?? '' ), 'shared' => (int) ( $m['shared'] ?? -1 ) );
+			$out[ $k ] = array( 'head' => (int) ( $m['from'] ?? $i ), 'kws' => array(), 'vol' => 0, 'review' => 0, 'kept' => 1, 'why' => (string) ( $m['why'] ?? '' ), 'shared' => (int) ( $m['shared'] ?? -1 ) );
 		}
+		$out[ $k ]['kept'] = min( $out[ $k ]['kept'], (int) ! empty( $m['kept'] ) );
 		$out[ $k ]['kws'][] = (int) $i;
 		$out[ $k ]['vol']  += (int) ( $kws[ $i ]['v'] ?? 0 );
 		$out[ $k ]['review'] = max( $out[ $k ]['review'], (int) ! empty( $m['review'] ) );

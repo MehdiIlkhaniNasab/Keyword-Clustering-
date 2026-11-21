@@ -874,8 +874,18 @@ function qtb_ws_topic_plan( $project, &$job ) {
 	$serps = array_intersect_key( qtb_data_get( $pid, 'serps', array() ), $sub );
 	$tree  = qtb_fx_nodes( $fx, $sub, $free, $locked );
 	$res   = qtb_fx_decide( $fx, $sub, $tree, array_merge( qtb_ws_fx_opts( $project, $serps, $sub ), array( 'plan_only' => true ) ) );
-	$job['serp_want'] = $res['want'];
-	qtb_job_log( $job, sprintf( '%s کلمه در %s گره (ترکیب ویژگی)؛ %s کلمه برای تصمیم‌های مرزی نتیجه گوگل لازم دارد.', qtb_num( count( $sub ) ), qtb_num( count( $tree['nodes'] ) ), qtb_num( count( $res['want'] ) ) ) );
+	$want = $res['want'];
+	$mid  = count( $want );
+	if ( 'borderline' !== ( $project['cfg']['serp_scope'] ?? 'all' ) ) {
+		// Every keyword is checked: the borderline ones first (they decide pages), then the rest by volume.
+		$rest = array_diff( $free, $want );
+		usort( $rest, function ( $a, $b ) use ( $sub ) {
+			return $sub[ $b ]['v'] <=> $sub[ $a ]['v'];
+		} );
+		$want = array_merge( $want, array_values( $rest ) );
+	}
+	$job['serp_want'] = $want;
+	qtb_job_log( $job, sprintf( '%s کلمه در %s گره (ترکیب ویژگی)؛ %s کلمه برای تصمیم‌های مرزی و %s کلمه دیگر برای بررسی تک‌تک کلمات نتیجه گوگل لازم دارند (هر چه قبلاً گرفته شده، دوباره گرفته نمی‌شود).', qtb_num( count( $sub ) ), qtb_num( count( $tree['nodes'] ) ), qtb_num( $mid ), qtb_num( count( $want ) - $mid ) ) );
 	return true;
 }
 
@@ -892,7 +902,16 @@ function qtb_ws_topic_fcluster( $project, &$job ) {
 	list( $sub, $locked, $free ) = qtb_ws_topic_pool( $t, $kws );
 	$serps = array_intersect_key( qtb_data_get( $pid, 'serps', array() ), $sub );
 	$tree  = qtb_fx_nodes( $fx, $sub, $free, $locked );
-	$res   = qtb_fx_decide( $fx, $sub, $tree, qtb_ws_fx_opts( $project, $serps, $sub ) );
+	$opts  = qtb_ws_fx_opts( $project, $serps, $sub );
+	$res   = qtb_fx_decide( $fx, $sub, $tree, $opts );
+	// Every keyword's own top 10 against the pages: a keyword clearly closer to another page moves there.
+	$moved = 0;
+	if ( $serps ) {
+		$res['groups'] = qtb_fx_refine( $res['groups'], $sub, $serps, $opts['hubs'], max( 2, (int) $opts['need'] - 1 ), $moved );
+		if ( $moved ) {
+			qtb_job_log( $job, sprintf( 'بررسی تک‌تک کلمات: نتایج گوگل %s کلمه به صفحه دیگری نزدیک‌تر بود و منتقل شد (با علامت).', qtb_num( $moved ) ) );
+		}
+	}
 	$own   = qtb_project_domain( $project );
 	$clusters = array();
 	$used     = array();
@@ -1723,6 +1742,40 @@ function qtb_ws_edit( $project, $e ) {
 			}
 			$t['clusters'][ $keep ]['locked'] = 1;
 			$ws['corrections'] = array_slice( $ws['corrections'], -80 );
+			break;
+		case 'node_keep': // {cid, node}: the reviewer confirms the sub-group belongs to this page.
+		case 'node_park': // {cid, node}: the sub-group's keywords go to the parking (for later).
+			$ci   = $cl( $e['cid'] ?? -1 );
+			$node = (string) ( $e['node'] ?? '' );
+			if ( null === $ci || '' === $node ) {
+				return new WP_Error( 'qtb_ws', 'کلاستر یا زیرگروه پیدا نشد.' );
+			}
+			$set = array();
+			foreach ( $t['clusters'][ $ci ]['kws'] as $i ) {
+				if ( $node === (string) ( $t['clusters'][ $ci ]['meta'][ $i ]['node'] ?? '' ) ) {
+					$set[] = (int) $i;
+				}
+			}
+			if ( ! $set ) {
+				return new WP_Error( 'qtb_ws', 'این زیرگروه دیگر در این کلاستر نیست.' );
+			}
+			foreach ( $set as $i ) {
+				if ( 'node_keep' === $op ) {
+					unset( $t['clusters'][ $ci ]['meta'][ $i ]['review'] );
+					$t['clusters'][ $ci ]['meta'][ $i ]['kept'] = 1;
+					$t['clusters'][ $ci ]['meta'][ $i ]['conf'] = 'high';
+				} else {
+					$kws[ $i ]['ws'] = 'park';
+					$kws[ $i ]['tr'] = 'manual';
+					$kws[ $i ]['tl'] = 1;
+					$kws[ $i ]['tn'] = 'پارک از برد بازبینی (' . $who . '): بعد از صفحات اولویت‌دار';
+					$ws['corrections'][] = array( 'k' => $kws[ $i ]['k'], 'from' => $t['clusters'][ $ci ]['name'], 'to' => 'پارکینگ', 'by' => $who, 'at' => qtb_now() );
+				}
+			}
+			$t['clusters'][ $ci ]['fx']['review'] = array_values( array_diff( (array) ( $t['clusters'][ $ci ]['fx']['review'] ?? array() ), $set ) );
+			$t['clusters'][ $ci ]['locked']       = 1;
+			$ws['corrections']                    = array_slice( $ws['corrections'], -80 );
+			$t['metrics']['user_changes']         = (int) ( $t['metrics']['user_changes'] ?? 0 ) + 1;
 			break;
 		case 'split_node': // {cid, node}: a sub-group merged into the cluster becomes its own page.
 			$ci   = $cl( $e['cid'] ?? -1 );

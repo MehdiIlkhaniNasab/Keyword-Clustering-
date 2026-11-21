@@ -17,7 +17,7 @@ $ti     = qtb_ws_topic_index( $ws, $tid );
 $t      = $ws['topics'][ $ti ];
 $states = qtb_ws_topic_states();
 $conf_l = array( 'high' => 'اطمینان زیاد', 'mid' => 'اطمینان متوسط', 'low' => 'اطمینان کم' );
-$why_l  = array( 'serp' => 'گوگل تأیید کرد: نتایج مشترک با صفحه', 'lexical' => 'شباهت معنایی (بدون سرپ)', 'ai' => 'جابه‌جایی هوش مصنوعی', 'user' => 'تصمیم شما', 'comp' => 'رقیب هر دو را با یک صفحه گرفته', 'facet' => 'همان ویژگی‌های صفحه', 'tail' => 'کم‌حجم، بدون شاهد گوگل؛ به نزدیک‌ترین صفحه رفت', 'near' => 'کم‌حجم و شبیه هیچ صفحه‌ای نبود؛ به نزدیک‌ترین صفحه رفت', 'syn' => 'مترادف: نتایج گوگل تقریباً یکسان' );
+$why_l  = array( 'serp' => 'گوگل تأیید کرد: نتایج مشترک با صفحه', 'lexical' => 'شباهت معنایی (بدون سرپ)', 'ai' => 'جابه‌جایی هوش مصنوعی', 'user' => 'تصمیم شما', 'comp' => 'رقیب هر دو را با یک صفحه گرفته', 'facet' => 'همان ویژگی‌های صفحه', 'tail' => 'کم‌حجم، بدون شاهد گوگل؛ به نزدیک‌ترین صفحه رفت', 'near' => 'کم‌حجم و شبیه هیچ صفحه‌ای نبود؛ به نزدیک‌ترین صفحه رفت', 'syn' => 'مترادف: نتایج گوگل تقریباً یکسان', 'serp_kw' => 'نتایج گوگل خود این کلمه به این صفحه نزدیک‌تر بود' );
 $facet  = 'facet' === ( $project['cfg']['engine'] ?? 'facet' ) || array_filter( $t['clusters'], function ( $c ) {
 	return ! empty( $c['fx'] );
 } );
@@ -269,11 +269,19 @@ $chip = function ( $i, $c, $n = 0 ) use ( $kws, $conf_l, $why_l, $act_l, $names,
 						<summary><?php echo esc_html( sprintf( '%s زیرگروه داخل این صفحه', qtb_num( count( $subs ) ) ) ); ?><?php $nr = count( array_filter( array_column( $subs, 'review' ) ) ); echo $nr ? ' <b>' . esc_html( qtb_num( $nr ) . ' بازبینی' ) . '</b>' : ''; // phpcs:ignore ?></summary>
 						<ul>
 							<?php foreach ( array_slice( $subs, 0, 8, true ) as $nk => $sg ) : ?>
-								<li class="<?php echo $sg['review'] ? 'is-rev' : ''; ?>" title="<?php echo esc_attr( ( $why_l[ $sg['why'] ] ?? '' ) . ( $sg['shared'] >= 0 ? ' · ' . qtb_num( $sg['shared'] ) . ' نتیجه مشترک' : '' ) ); ?>">
+								<li class="<?php echo $sg['review'] ? 'is-rev' : ''; ?><?php echo $sg['kept'] ? ' is-kept' : ''; ?>" title=""<?php echo esc_attr( ( $why_l[ $sg['why'] ] ?? '' ) . ( $sg['shared'] >= 0 ? ' · ' . qtb_num( $sg['shared'] ) . ' نتیجه مشترک' : '' ) ); ?>">
 									<i class="qtb-sg-dot is-<?php echo esc_attr( $sg['why'] ); ?>"></i>
 									<span><?php echo esc_html( $kws[ $sg['head'] ]['k'] ?? '' ); ?></span>
 									<em><?php echo esc_html( qtb_num( count( $sg['kws'] ) ) . ' کلمه · ' . qtb_num( $sg['vol'] ) ); ?></em>
-									<button type="button" class="qtb-sg-split" data-qtb-split="<?php echo esc_attr( $nk ); ?>" data-cid="<?php echo esc_attr( $c['id'] ); ?>" title="این زیرگروه (و کوچک‌ترهای زیرش) صفحه جدا شود">جدا کن</button>
+									<span class="qtb-sg-acts">
+										<?php if ( $sg['kept'] ) : ?>
+											<b class="qtb-sg-ok" title="شما تأیید کردید که در همین صفحه بماند">تأیید شد</b>
+										<?php else : ?>
+											<button type="button" class="qtb-sg-btn is-keep" data-qtb-node="node_keep" data-node="<?php echo esc_attr( $nk ); ?>" data-cid="<?php echo esc_attr( $c['id'] ); ?>" title="درست است؛ در همین صفحه بماند">نگه دار</button>
+										<?php endif; ?>
+										<button type="button" class="qtb-sg-btn is-split" data-qtb-split="<?php echo esc_attr( $nk ); ?>" data-cid="<?php echo esc_attr( $c['id'] ); ?>" title="این زیرگروه (و کوچک‌ترهای زیرش) صفحه جدا شود">جدا کن</button>
+										<button type="button" class="qtb-sg-btn is-park" data-qtb-node="node_park" data-node="<?php echo esc_attr( $nk ); ?>" data-cid="<?php echo esc_attr( $c['id'] ); ?>" title="فعلاً با این کلمات کاری نداریم؛ به پارکینگ برود تا بعد از صفحات اولویت‌دار">پارک</button>
+									</span>
 								</li>
 							<?php endforeach; ?>
 							<?php if ( count( $subs ) > 8 ) : ?><li class="qtb-sg-more"><?php echo esc_html( sprintf( 'و %s زیرگروه کوچک‌تر؛ کلمه‌هایشان در فهرست زیر است.', qtb_num( count( $subs ) - 8 ) ) ); ?></li><?php endif; ?>

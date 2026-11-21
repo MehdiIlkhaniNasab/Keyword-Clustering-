@@ -99,6 +99,7 @@ function qtb_handle_post( $route ) {
 				'min_page'    => max( 0, (int) ( $post['min_page'] ?? 0 ) ),
 				'promote_pct' => max( 1, min( 100, (float) ( $post['promote_pct'] ?? 15 ) ) ),
 				'biz_kind'    => in_array( $post['biz_kind'] ?? '', array( 'shop', 'service', 'content' ), true ) ? $post['biz_kind'] : 'shop',
+				'serp_scope'  => 'borderline' === ( $post['serp_scope'] ?? '' ) ? 'borderline' : 'all',
 			) ), $id );
 			qtb_flash_set( 'پروفایل کسب‌وکار ذخیره شد.' );
 			wp_safe_redirect( qtb_project_url( $id, 'workshop', array( 'ws' => 'profile' ) ) );

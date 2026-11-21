@@ -863,6 +863,12 @@
 				wsEdit( { op: 'split_node', tid: tid, cid: +t.getAttribute( 'data-cid' ), node: t.getAttribute( 'data-qtb-split' ) }, 'زیرگروه صفحه جدا شد' );
 				return;
 			}
+			if ( ( t = e.target.closest( '[data-qtb-node]' ) ) ) {
+				var nop = t.getAttribute( 'data-qtb-node' );
+				t.disabled = true;
+				wsEdit( { op: nop, tid: tid, cid: +t.getAttribute( 'data-cid' ), node: t.getAttribute( 'data-node' ) }, 'node_keep' === nop ? 'تأیید شد؛ در همین صفحه می‌ماند' : 'به پارکینگ رفت؛ بعداً از «کنار گذاشته‌ها» برمی‌گردد' );
+				return;
+			}
 			if ( e.target.closest( '[data-qtb-bdreview]' ) ) {
 				var rf = $( '[data-qtb-bdfilter] [data-f="review"]', bd );
 				if ( rf ) { rf.click(); }
